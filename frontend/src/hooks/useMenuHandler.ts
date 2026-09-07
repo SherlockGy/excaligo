@@ -1,7 +1,7 @@
 import { t } from './useTranslation'
 import { useEffect } from 'react'
 import { listen, invoke, getCurrentWindow } from '../lib/backend'
-import { useStore } from '../store/useStore'
+import { createEditorKey, useStore } from '../store/useStore'
 import { promptForName } from '../lib/namePrompt'
 
 interface MenuCommand { command: string; data?: unknown }
@@ -38,7 +38,7 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
     }
     case 'save': await state.saveCurrentFile(); return
     case 'save_as': {
-      if (state.savingBeforeReadOnly || state.movingFilePath) return
+      if (state.savingBeforeReadOnly || state.fileMutationPath) return
       if (!state.activeFile || !state.fileContent) return
       if (state.readOnly) {
         alert(t('Switch to edit mode before saving a drawing.'))
@@ -50,6 +50,7 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
       const saved = await invoke<{ content: string; content_hash: string }>('read_file_with_hash', { filePath: path })
       const scene = JSON.parse(saved.content)
       const tab = {
+        editorKey: createEditorKey(),
         name: path.split(/[\\/]/).pop() || original.name, path, modified: false,
         cachedContent: saved.content, contentHash: saved.content_hash, sceneVersion: 0,
         cachedScene: { elements: scene.elements, appState: scene.appState || {}, files: scene.files || {} },

@@ -31,7 +31,7 @@ export function Sidebar() {
     loadFileFromTree,
     createNewFile,
     createNewFolder,
-    movingFilePath,
+    fileMutationPath,
   } = useStore()
   const drag = useSidebarFileDrag()
   const rootDropTarget = !!currentDirectory && drag.dropTargetPath === currentDirectory
@@ -88,7 +88,7 @@ export function Sidebar() {
   }
 
   return (
-    <div ref={drag.rootRef} {...drag.handlers} className="sidebar-panel w-[280px] h-full border-r flex flex-col" aria-busy={!!movingFilePath}>
+    <div ref={drag.rootRef} {...drag.handlers} className="sidebar-panel w-[280px] h-full border-r flex flex-col" aria-busy={!!fileMutationPath}>
       {drag.draggedFilePath && drag.position && (
         <div className="file-drag-preview" style={{ left: drag.position.x, top: drag.position.y }} aria-hidden="true">
           {drag.draggedFilePath.split(/[\\/]/).pop()?.replace(/\.excalidraw$/, '')}
@@ -148,9 +148,9 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="sidebar-section p-3 border-t">
-        {(drag.draggedFilePath || movingFilePath) && (
+        {(drag.draggedFilePath || fileMutationPath) && (
           <div className="sidebar-muted text-xs mb-2" role="status">
-            {movingFilePath ? t('Moving file...') : t('Drop onto a folder or the workspace name to move.')}
+            {fileMutationPath ? t('Updating files...') : t('Drop onto a folder or the workspace name to move.')}
           </div>
         )}
         <div className="sidebar-muted text-xs">

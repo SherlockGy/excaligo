@@ -1,9 +1,9 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { TreeView } from './TreeView'
 import { TabBar } from './TabBar'
 import { useStore } from '../store/useStore'
-import { mockInvoke } from '../test/setup'
+import { mockAsk, mockInvoke } from '../test/setup'
 import type { FileTreeNode, OpenTab } from '../types'
 
 const initial = useStore.getState()
@@ -110,4 +110,20 @@ it('shares the translated unsaved tooltip between the file list and tabs and cle
   act(() => { useStore.setState({ openTabs: [{ ...tab, modified: false }] }) })
   rerender(<><TreeView nodes={[{ ...file, modified: false }]} onFileClick={vi.fn()} /><TabBar /></>)
   expect(screen.queryByRole('img', { name: '未保存的更改' })).not.toBeInTheDocument()
+})
+
+it('checks the latest background dirty state before confirming deletion', async () => {
+  let resolve!: (value: boolean) => void
+  mockAsk.mockReturnValueOnce(new Promise<boolean>(done => { resolve = done })).mockResolvedValueOnce(false)
+  useStore.setState({ openTabs: [{ ...tab, modified: false }] })
+  render(<TreeView nodes={[file]} onFileClick={vi.fn()} />)
+  fireEvent.click(screen.getByRole('button', { name: `Actions for ${file.name}` }))
+  fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+  await act(async () => {
+    useStore.setState({ openTabs: [{ ...tab, modified: true }] })
+    resolve(true)
+  })
+  await waitFor(() => expect(mockAsk).toHaveBeenCalledTimes(2))
+  expect(mockAsk).toHaveBeenLastCalledWith(expect.stringContaining('unsaved changes'), expect.anything())
+  expect(mockInvoke).not.toHaveBeenCalled()
 })

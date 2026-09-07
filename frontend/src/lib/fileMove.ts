@@ -6,11 +6,25 @@ export function normalizeFilePath(path: string): string {
   return normalized || '/'
 }
 
+export function parentDirectory(path: string): string {
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  if (separator === 0 || (separator === 2 && /^[a-z]:/i.test(path))) return path.slice(0, separator + 1)
+  return path.slice(0, separator)
+}
+
 export function canDropFile(filePath: string | null, directory: string | null): boolean {
   if (!filePath || !directory) return false
   const normalized = normalizeFilePath(filePath)
   const parent = normalizeFilePath(normalized.slice(0, normalized.lastIndexOf('/')))
   return parent !== normalizeFilePath(directory)
+}
+
+// Mirror drawing.SafeName only to reserve open-tab paths before a rename.
+// The backend still validates the operation and supplies the canonical result.
+export function renameDestination(path: string, requestedName: string): string {
+  const normalized = normalizeFilePath(path)
+  const name = requestedName.trim().replace(/\/|\\|\.\./g, '_')
+  return `${normalized.slice(0, normalized.lastIndexOf('/'))}/${name}`
 }
 
 export function findTreeNode(nodes: FileTreeNode[], path: string): FileTreeNode | undefined {

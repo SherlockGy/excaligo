@@ -124,6 +124,6 @@
   "A file with this name is already open.": "目标位置已有同名文件的标签页，请先处理该标签页。",
   "Failed to move file: {error}": "移动文件失败：{error}",
   "Drop files here to move to the workspace root": "将文件拖到此处以移回工作目录根层级",
-  "Moving file...": "正在移动文件…",
+  "Updating files...": "正在更新文件…",
   "Drop onto a folder or the workspace name to move.": "拖到文件夹或顶部工作目录名称上以移动文件。"
 }

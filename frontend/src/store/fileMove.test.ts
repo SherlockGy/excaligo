@@ -57,7 +57,7 @@ it('waits for an existing save, blocks conflicting operations, and updates the f
   mockInvoke.mockImplementationOnce(() => writing.promise)
   const saving = useStore.getState().saveCurrentFile()
   const moving = useStore.getState().moveFile(file.path, folder.path)
-  expect(useStore.getState().movingFilePath).toBe(file.path)
+  expect(useStore.getState().fileMutationPath).toBe(file.path)
   await useStore.getState().saveCurrentFile()
   await useStore.getState().closeTab(file.path)
   await useStore.getState().renameFile(file.path, 'other')
@@ -70,7 +70,7 @@ it('waits for an existing save, blocks conflicting operations, and updates the f
   expect(await moving).toBe(true)
   expect(useStore.getState().isDirty).toBe(false)
   expect(useStore.getState().openTabs[0].contentHash).toBe('new-disk-hash')
-  expect(useStore.getState().movingFilePath).toBeNull()
+  expect(useStore.getState().fileMutationPath).toBeNull()
 })
 
 it('keeps edits received while the move is pending', async () => {
@@ -95,7 +95,7 @@ it('retains original paths and unsaved content when the backend refuses a collis
   expect(useStore.getState().openTabs).toEqual([tab])
   expect(useStore.getState().fileContent).toBe(content)
   expect(useStore.getState().isDirty).toBe(true)
-  expect(useStore.getState().movingFilePath).toBeNull()
+  expect(useStore.getState().fileMutationPath).toBeNull()
   expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('already exists'))
 })
 

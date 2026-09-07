@@ -206,7 +206,7 @@ export function ExcalidrawEditor() {
   const activeFile = useStore(state => state.activeFile)
   const openTabs = useStore(state => state.openTabs)
   const presentationMode = useStore(state => state.presentationMode)
-  const readOnly = useStore(state => state.readOnly || state.savingBeforeReadOnly || state.movingFilePath !== null)
+  const readOnly = useStore(state => state.readOnly || state.savingBeforeReadOnly || state.fileMutationPath !== null)
   const theme = useTheme()
 
   if (!activeFile) {
@@ -224,7 +224,7 @@ export function ExcalidrawEditor() {
     <div className="flex-1 min-h-0 relative">
       {openTabs.map((tab) => (
         <EditorPane
-          key={`${tab.path}:${tab.sceneVersion}`}
+          key={`${tab.editorKey ?? tab.path}:${tab.sceneVersion}`}
           tab={tab}
           isActive={activeFile.path === tab.path}
           presentationMode={presentationMode}

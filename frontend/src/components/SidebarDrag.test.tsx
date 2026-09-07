@@ -89,9 +89,9 @@ it('disables dragging while moving and while renaming', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
   expect(screen.getByRole('textbox').closest('.tree-node')).not.toHaveAttribute('data-file-draggable')
   fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
-  act(() => { useStore.setState({ movingFilePath: file.path }) })
+  act(() => { useStore.setState({ fileMutationPath: file.path }) })
   expect(row('Sketch')).not.toHaveAttribute('data-file-draggable')
-  expect(screen.getByRole('status')).toHaveTextContent('Moving file...')
+  expect(screen.getByRole('status')).toHaveTextContent('Updating files...')
 })
 
 it('preserves ordinary clicks and ignores movements below the drag threshold', () => {

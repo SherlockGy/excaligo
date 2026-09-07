@@ -4,7 +4,7 @@ import { CachedExcalidrawScene, ExcalidrawFile, FileTreeNode, OpenTab, Preferenc
 import { convertPreferencesFromBackend, convertPreferencesToBackend } from '../lib/preferences'
 import { ask } from '../lib/backend'
 import { translate, type MessageKey, type Parameters } from '../lib/i18n'
-import { canDropFile, findTreeNode, moveTreeFile, normalizeFilePath } from '../lib/fileMove'
+import { canDropFile, findTreeNode, moveTreeFile, normalizeFilePath, renameDestination } from '../lib/fileMove'
 
 type UnsavedChangesDecision = 'save' | 'discard' | 'cancel'
 type FileLoadSource = 'cache' | 'disk' | null
@@ -15,6 +15,10 @@ let directoryWatch: Promise<unknown> = Promise.resolve()
 let preferenceWrites: Promise<unknown> = Promise.resolve()
 let appearanceGeneration = 0
 let fileTreeGeneration = 0
+let editorSequence = 0
+
+// Local identity only; no secure-context browser API or persistent ID is needed.
+export function createEditorKey(): string { return `editor-${++editorSequence}` }
 
 function t(key: MessageKey, parameters?: Parameters): string {
   return translate(useStore.getState().preferences.language, key, parameters)
@@ -43,6 +47,7 @@ function toOpenTab(
 ): OpenTab {
   return {
     ...file,
+    editorKey: createEditorKey(),
     cachedContent: content,
     contentHash,
     cachedScene: parseSceneFromContent(content),
@@ -118,6 +123,39 @@ function replacePathPrefix(path: string, oldPrefix: string, newPrefix: string): 
   return path
 }
 
+// Name-changing operations share one guard: watchers must not prune old paths
+// until tabs have been updated, and no new save may target those old paths.
+function beginFileMutation(path: string) {
+  useStore.setState({ fileMutationPath: path })
+  fileLoadGeneration++
+  directoryLoadGeneration++
+  fileTreeGeneration++
+}
+
+async function waitForFileWrites(path: string) {
+  await Promise.all([...savingFiles].filter(([file]) => isPathInsideDirectory(file, path)).map(([, operation]) => operation))
+}
+
+function activeDocumentUnchanged(snapshot: Pick<AppStore, 'activeFile' | 'fileContent'>): boolean {
+  const current = useStore.getState()
+  return current.activeFile?.path === snapshot.activeFile?.path && current.fileContent === snapshot.fileContent
+}
+
+function renameConflictsWithOpenTab(oldPath: string, requestedName: string): boolean {
+  const source = normalizeFilePath(oldPath)
+  const destination = renameDestination(oldPath, requestedName)
+  return useStore.getState().openTabs.some(tab => {
+    const path = normalizeFilePath(tab.path)
+    return isPathInsideDirectory(path, destination) && !isPathInsideDirectory(path, source)
+  })
+}
+
+export function openDocumentsUnchanged(snapshot: Pick<AppStore, 'activeFile' | 'fileContent' | 'openTabs'>): boolean {
+  const current = useStore.getState()
+  return activeDocumentUnchanged(snapshot) && current.openTabs.length === snapshot.openTabs.length &&
+    snapshot.openTabs.every(tab => current.openTabs.find(item => item.path === tab.path)?.cachedContent === tab.cachedContent)
+}
+
 interface AppStore {
   // State
   currentDirectory: string | null
@@ -131,7 +169,7 @@ interface AppStore {
   isDirty: boolean
   readOnly: boolean
   savingBeforeReadOnly: boolean
-  movingFilePath: string | null
+  fileMutationPath: string | null
   presentationMode: boolean
   openTabs: OpenTab[]
 
@@ -157,6 +195,7 @@ interface AppStore {
   loadFile: (file: ExcalidrawFile) => Promise<void>
   loadFileFromTree: (node: FileTreeNode) => Promise<void>
   saveCurrentFile: (content?: string) => Promise<void>
+  saveTab: (filePath: string, content?: string) => Promise<void>
   toggleReadOnly: () => Promise<void>
   createNewFile: (fileName?: string, directory?: string) => Promise<void>
   createNewFolder: (folderName?: string, directory?: string) => Promise<void>
@@ -191,7 +230,7 @@ export const useStore = create<AppStore>((set, get) => ({
   isDirty: false,
   readOnly: true,
   savingBeforeReadOnly: false,
-  movingFilePath: null,
+  fileMutationPath: null,
   presentationMode: false,
   openTabs: [],
 
@@ -252,37 +291,59 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Load directory and list files
   loadDirectory: async (dir) => {
-    if (get().savingBeforeReadOnly || get().movingFilePath) return false
+    if (get().savingBeforeReadOnly || get().fileMutationPath) return false
     const logPrefix = `[loadDirectory 加载工作目录][directory=${dir}]`
     const generation = ++directoryLoadGeneration
     fileLoadGeneration++
     try {
       const state = get()
+      const isCurrent = () => generation === directoryLoadGeneration && openDocumentsUnchanged(state)
       if (state.isDirty && state.activeFile) {
         const decision = await confirmUnsavedChanges(state.activeFile.name, t('switching directories'))
+        if (!isCurrent()) return false
         if (decision === 'cancel') return false
         if (decision === 'save') {
           await state.saveCurrentFile()
           if (get().isDirty) return false
         }
       }
+      for (const tab of state.openTabs.filter(tab => tab.modified && tab.path !== state.activeFile?.path)) {
+        if (!isCurrent()) return false
+        const decision = await confirmUnsavedChanges(tab.name, t('switching directories'))
+        if (!isCurrent() || decision === 'cancel') return false
+        if (decision === 'save') {
+          await get().saveTab(tab.path)
+          if (get().openTabs.find(item => item.path === tab.path)?.modified) return false
+        }
+      }
+      if (!isCurrent()) return false
       const [files, fileTree] = await Promise.all([
         invoke<ExcalidrawFile[]>('list_excalidraw_files', { directory: dir }),
         invoke<FileTreeNode[]>('get_file_tree', { directory: dir })
       ])
-      if (generation !== directoryLoadGeneration || get().fileContent !== state.fileContent) return false
+      if (!isCurrent()) return false
       // Serialize watcher replacement as Wails service calls may run concurrently.
       directoryWatch = directoryWatch.catch(() => {}).then(() => {
-        if (generation === directoryLoadGeneration) return invoke('watch_directory', { directory: dir })
+        if (isCurrent()) return invoke('watch_directory', { directory: dir })
       })
       await directoryWatch
-      if (generation !== directoryLoadGeneration || get().fileContent !== state.fileContent) return false
+      if (!isCurrent()) {
+        // A slow watcher installation must not leave the old workspace unwatched.
+        const currentDirectory = get().currentDirectory
+        if (generation === directoryLoadGeneration && currentDirectory && currentDirectory !== dir) {
+          directoryWatch = directoryWatch.catch(() => {}).then(() => invoke('watch_directory', { directory: currentDirectory }))
+          await directoryWatch
+        }
+        return false
+      }
 
       if (state.presentationMode && state.preferences.showDecorations) {
         await invoke('set_menu_visible', { visible: true }).catch((error) => {
           console.error('Failed to restore menu before loading directory:', error)
         })
       }
+
+      if (!isCurrent()) return false
 
       set({
         currentDirectory: dir,
@@ -348,7 +409,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Load file content
   loadFile: async (file) => {
-    if (get().savingBeforeReadOnly || get().movingFilePath) return
+    if (get().savingBeforeReadOnly || get().fileMutationPath) return
     const state = get()
 
     // If clicking the same file that's already active, do nothing
@@ -356,10 +417,13 @@ export const useStore = create<AppStore>((set, get) => ({
       return
     }
     const generation = ++fileLoadGeneration
+    let snapshot = state
+    const isCurrent = () => generation === fileLoadGeneration && activeDocumentUnchanged(snapshot)
 
     // Check if current file has unsaved changes
     if (state.isDirty && state.activeFile) {
       const decision = await confirmUnsavedChanges(state.activeFile.name, t('switching files'))
+      if (!isCurrent()) return
 
       if (decision === 'save') {
         await state.saveCurrentFile()
@@ -374,6 +438,8 @@ export const useStore = create<AppStore>((set, get) => ({
             (existingTab?.sceneVersion || 0) + 1
           )
 
+          if (!isCurrent()) return
+
           set((currentState) => ({
             activeFile: toExcalidrawFile(cleanTab),
             fileContent: cleanTab.cachedContent,
@@ -385,6 +451,7 @@ export const useStore = create<AppStore>((set, get) => ({
           }))
           state.markFileAsModified(cleanTab.path, false)
           state.markTreeNodeAsModified(cleanTab.path, false)
+          snapshot = get()
         } catch (error) {
           console.error('Failed to discard unsaved changes:', error)
           alert(t("Failed to discard unsaved changes: {error}", { error: String(error) }))
@@ -394,15 +461,23 @@ export const useStore = create<AppStore>((set, get) => ({
     }
 
     try {
-      if (generation !== fileLoadGeneration) return
+      if (!isCurrent()) return
       const latestState = get()
       const existingTab = latestState.openTabs.find(t => t.path === file.path)
+
+      // Unsaved memory is authoritative even if the external file disappeared
+      // or changed. Hash-based reloads are only safe for clean tabs.
+      if (existingTab?.modified) {
+        set({ activeFile: toExcalidrawFile(existingTab), fileContent: existingTab.cachedContent,
+          activeFileLoadSource: 'cache', isDirty: true, readOnly: false })
+        return
+      }
 
       if (existingTab) {
         const diskHash = await invoke<string>('hash_file_content', {
           filePath: file.path,
         })
-        if (generation !== fileLoadGeneration) return
+        if (!isCurrent()) return
 
         if (diskHash === existingTab.contentHash) {
           set({
@@ -420,7 +495,7 @@ export const useStore = create<AppStore>((set, get) => ({
         file,
         existingTab ? existingTab.sceneVersion + 1 : 0
       )
-      if (generation !== fileLoadGeneration) return
+      if (!isCurrent()) return
       const updatedFile = toExcalidrawFile(updatedTab)
       const openTabs = existingTab
         ? get().openTabs.map((tab) => (tab.path === file.path ? updatedTab : tab))
@@ -438,6 +513,7 @@ export const useStore = create<AppStore>((set, get) => ({
       state.markFileAsModified(file.path, false)
       state.markTreeNodeAsModified(file.path, false)
     } catch (error) {
+      if (!isCurrent()) return
       console.error('Failed to load file:', error)
 
       // If file doesn't exist, refresh the tree and show error
@@ -479,13 +555,23 @@ export const useStore = create<AppStore>((set, get) => ({
   // Save current file
   saveCurrentFile: async (content) => {
     const state = get()
-    if (state.readOnly || state.movingFilePath) return
-    const { activeFile, fileContent, isDirty } = state
+    if (state.readOnly || state.fileMutationPath) return
+    if (state.activeFile) await get().saveTab(state.activeFile.path, content)
+  },
+
+  saveTab: async (filePath, content) => {
+    const logPrefix = `[saveTab 保存绘图标签][filePath=${filePath}]`
+    const state = get()
+    const isActive = state.activeFile?.path === filePath
+    if (state.fileMutationPath || (isActive && state.readOnly)) return
+    const activeFile = state.openTabs.find(tab => tab.path === filePath)
+    const fileContent = isActive ? state.fileContent : activeFile?.cachedContent
+    const isDirty = isActive ? state.isDirty : activeFile?.modified
 
     const pending = activeFile && savingFiles.get(activeFile.path)
     if (pending) {
       await pending
-      if (get().activeFile?.path === activeFile?.path) await get().saveCurrentFile(content)
+      await get().saveTab(filePath, content)
       return
     }
 
@@ -510,7 +596,7 @@ export const useStore = create<AppStore>((set, get) => ({
         throw new Error('Invalid Excalidraw JSON structure')
       }
     } catch (jsonError) {
-      console.error('[saveCurrentFile] Invalid JSON, not saving:', jsonError)
+      console.error(logPrefix, jsonError)
       throw jsonError
     }
 
@@ -542,7 +628,7 @@ export const useStore = create<AppStore>((set, get) => ({
         ),
       }))
     } catch (error) {
-      console.error('[saveCurrentFile] Failed to save file:', error)
+      console.error(logPrefix, error)
       alert(t("Failed to save file: {error}", { error: String(error) }))
       throw error
     } finally {
@@ -553,7 +639,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // Application-level policy. Excalidraw stays an unmodified dependency.
   toggleReadOnly: async () => {
     const state = get()
-    if (!state.activeFile || state.savingBeforeReadOnly || state.movingFilePath) return
+    if (!state.activeFile || state.savingBeforeReadOnly || state.fileMutationPath) return
     if (state.readOnly) {
       set({ readOnly: false })
       return
@@ -580,13 +666,17 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Create new file
   createNewFile: async (fileName, directory) => {
-    if (get().savingBeforeReadOnly || get().movingFilePath) return
+    if (get().savingBeforeReadOnly || get().fileMutationPath) return
     const state = get()
+    let generation = ++fileLoadGeneration
+    let snapshot = state
+    const isCurrent = () => generation === fileLoadGeneration && activeDocumentUnchanged(snapshot)
     let { currentDirectory } = state
 
     // Check if current file has unsaved changes
     if (state.isDirty && state.activeFile) {
       const decision = await confirmUnsavedChanges(state.activeFile.name, t('creating a new file'))
+      if (!isCurrent()) return
 
       if (decision === 'save') {
         await state.saveCurrentFile()
@@ -601,6 +691,7 @@ export const useStore = create<AppStore>((set, get) => ({
             (existingTab?.sceneVersion || 0) + 1
           )
 
+          if (!isCurrent()) return
           set((currentState) => ({
             activeFile: toExcalidrawFile(cleanTab),
             fileContent: cleanTab.cachedContent,
@@ -612,6 +703,7 @@ export const useStore = create<AppStore>((set, get) => ({
           }))
           state.markFileAsModified(cleanTab.path, false)
           state.markTreeNodeAsModified(cleanTab.path, false)
+          snapshot = get()
         } catch (error) {
           console.error('Failed to discard unsaved changes:', error)
           alert(t("Failed to discard unsaved changes: {error}", { error: String(error) }))
@@ -621,16 +713,20 @@ export const useStore = create<AppStore>((set, get) => ({
     }
 
     // Check if a directory is selected
+    if (!isCurrent()) return
     if (!currentDirectory) {
       // Prompt to select a directory if none is selected
       try {
         const dir = await invoke<string | null>('select_directory')
+        if (!isCurrent()) return
         if (!dir) {
           return
         }
         // Load the selected directory
         if (!await state.loadDirectory(dir)) return
         currentDirectory = dir
+        generation = fileLoadGeneration
+        snapshot = get()
       } catch (error) {
         console.error('Failed to select directory:', error)
         alert(t("Failed to select directory: {error}", { error: String(error) }))
@@ -651,9 +747,11 @@ export const useStore = create<AppStore>((set, get) => ({
         directory: targetDirectory,
         fileName: requestedFileName,
       })
+      if (!isCurrent()) return
 
       // Reload the file tree to show the new file
       await state.loadFileTree(currentDirectory)
+      if (!isCurrent()) return
 
       // Create an ExcalidrawFile object for the new file
       const file: ExcalidrawFile = {
@@ -672,7 +770,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Create new folder
   createNewFolder: async (folderName, directory) => {
-    if (get().movingFilePath) return
+    if (get().fileMutationPath) return
     const state = get()
     let { currentDirectory } = state
 
@@ -714,13 +812,21 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Rename file
   renameFile: async (oldPath, newName) => {
-    if (get().savingBeforeReadOnly || get().movingFilePath) return
+    if (get().savingBeforeReadOnly || get().fileMutationPath) return
+    const logPrefix = `[renameFile 重命名绘图][filePath=${oldPath}]`
+    beginFileMutation(oldPath)
     try {
       // Ensure the new name has .excalidraw extension
       const finalName = newName.endsWith('.excalidraw')
         ? newName
         : `${newName}.excalidraw`
 
+      if (renameConflictsWithOpenTab(oldPath, finalName)) {
+        alert(t('A file with this name is already open.'))
+        return
+      }
+
+      await waitForFileWrites(oldPath)
       const newPath = await invoke<string>('rename_file', {
         oldPath,
         newName: finalName,
@@ -728,7 +834,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
       const state = get()
       const renamedFile = {
-        name: finalName,
+        name: fileNameFromPath(newPath),
         path: newPath,
         modified: state.activeFile?.path === oldPath ? state.isDirty : false,
       }
@@ -736,7 +842,7 @@ export const useStore = create<AppStore>((set, get) => ({
       set({
         activeFile: state.activeFile?.path === oldPath ? renamedFile : state.activeFile,
         openTabs: state.openTabs.map((tab) =>
-          tab.path === oldPath ? { ...tab, name: finalName, path: newPath } : tab
+          tab.path === oldPath ? { ...tab, name: fileNameFromPath(newPath), path: newPath } : tab
         ),
       })
 
@@ -745,15 +851,24 @@ export const useStore = create<AppStore>((set, get) => ({
         await state.loadFileTree(state.currentDirectory)
       }
     } catch (error) {
-      console.error('Failed to rename file:', error)
+      console.error(logPrefix, error)
       alert(t("Failed to rename file: {error}", { error: String(error) }))
+    } finally {
+      set({ fileMutationPath: null })
     }
   },
 
   // Rename folder
   renameFolder: async (oldPath, newName) => {
-    if (get().savingBeforeReadOnly || get().movingFilePath) return
+    if (get().savingBeforeReadOnly || get().fileMutationPath) return
+    const logPrefix = `[renameFolder 重命名目录][directory=${oldPath}]`
+    beginFileMutation(oldPath)
     try {
+      if (renameConflictsWithOpenTab(oldPath, newName)) {
+        alert(t('A file with this name is already open.'))
+        return
+      }
+      await waitForFileWrites(oldPath)
       const newPath = await invoke<string>('rename_folder', {
         oldPath,
         newName,
@@ -790,8 +905,10 @@ export const useStore = create<AppStore>((set, get) => ({
         await state.loadFileTree(state.currentDirectory)
       }
     } catch (error) {
-      console.error('Failed to rename folder:', error)
+      console.error(logPrefix, error)
       alert(t("Failed to rename folder: {error}", { error: String(error) }))
+    } finally {
+      set({ fileMutationPath: null })
     }
   },
 
@@ -801,7 +918,7 @@ export const useStore = create<AppStore>((set, get) => ({
     const state = get()
     const source = findTreeNode(state.fileTree, filePath)
     const target = directory === state.currentDirectory || findTreeNode(state.fileTree, directory)?.is_directory
-    if (state.movingFilePath || state.savingBeforeReadOnly || !state.currentDirectory ||
+    if (state.fileMutationPath || state.savingBeforeReadOnly || !state.currentDirectory ||
       !source || source.is_directory || !target || !canDropFile(filePath, directory)) return false
 
     const expectedPath = `${normalizeFilePath(directory).replace(/\/$/, '')}/${source.name}`
@@ -810,10 +927,7 @@ export const useStore = create<AppStore>((set, get) => ({
       return false
     }
 
-    set({ movingFilePath: filePath })
-    fileLoadGeneration++
-    directoryLoadGeneration++
-    fileTreeGeneration++
+    beginFileMutation(filePath)
     try {
       // Wait for an already-started write, while preventing new writes to the old path.
       await savingFiles.get(filePath)
@@ -831,15 +945,18 @@ export const useStore = create<AppStore>((set, get) => ({
       alert(t('Failed to move file: {error}', { error: String(error) }))
       return false
     } finally {
-      set({ movingFilePath: null })
+      set({ fileMutationPath: null })
     }
   },
 
   // Delete file
   // NOTE: Confirmation should be handled by the caller
   deleteFile: async (filePath) => {
-    if (get().savingBeforeReadOnly || get().movingFilePath) return false
+    if (get().savingBeforeReadOnly || get().fileMutationPath) return false
+    const logPrefix = `[deleteFile 删除绘图][filePath=${filePath}]`
+    beginFileMutation(filePath)
     try {
+      await waitForFileWrites(filePath)
       await invoke('delete_file', { filePath })
       const state = get()
       const openTabs = state.openTabs.filter((tab) => tab.path !== filePath)
@@ -862,16 +979,21 @@ export const useStore = create<AppStore>((set, get) => ({
 
       return true
     } catch (error) {
-      console.error('[deleteFile] Failed to delete file:', error)
+      console.error(logPrefix, error)
       throw error
+    } finally {
+      set({ fileMutationPath: null })
     }
   },
 
   // Delete folder
   // NOTE: Confirmation should be handled by the caller
   deleteFolder: async (folderPath) => {
-    if (get().savingBeforeReadOnly || get().movingFilePath) return false
+    if (get().savingBeforeReadOnly || get().fileMutationPath) return false
+    const logPrefix = `[deleteFolder 删除目录][directory=${folderPath}]`
+    beginFileMutation(folderPath)
     try {
+      await waitForFileWrites(folderPath)
       await invoke('delete_folder', { folderPath })
       const state = get()
       const openTabs = state.openTabs.filter((tab) => !isPathInsideDirectory(tab.path, folderPath))
@@ -894,8 +1016,10 @@ export const useStore = create<AppStore>((set, get) => ({
 
       return true
     } catch (error) {
-      console.error('[deleteFolder] Failed to delete folder:', error)
+      console.error(logPrefix, error)
       throw error
+    } finally {
+      set({ fileMutationPath: null })
     }
   },
 
@@ -1048,49 +1172,34 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Close tab
   closeTab: async (filePath) => {
-    if (get().savingBeforeReadOnly || get().movingFilePath) return
+    if (get().savingBeforeReadOnly || get().fileMutationPath) return
     const state = get()
     const tabIndex = state.openTabs.findIndex(t => t.path === filePath)
     if (tabIndex === -1) return
 
     const tab = state.openTabs[tabIndex]
+    const generation = ++fileLoadGeneration
+    const isCurrent = () => generation === fileLoadGeneration && activeDocumentUnchanged(state) &&
+      get().openTabs.find(item => item.path === filePath)?.cachedContent === tab.cachedContent
 
-    // Check for unsaved changes if this is the active file
-    if (state.activeFile?.path === filePath && state.isDirty) {
+    // Background dirty tabs need the same explicit save/discard decision.
+    if (tab.modified || (state.activeFile?.path === filePath && state.isDirty)) {
       const decision = await confirmUnsavedChanges(tab.name, t('closing'))
+      if (!isCurrent()) return
 
       if (decision === 'save') {
-        await state.saveCurrentFile()
-        if (get().isDirty) return
+        if (state.activeFile?.path === filePath) await state.saveCurrentFile()
+        else await state.saveTab(filePath)
+        if (get().openTabs.find(item => item.path === filePath)?.modified ||
+          (get().activeFile?.path === filePath && get().isDirty)) return
       } else if (decision === 'cancel') {
         return
-      } else {
-        try {
-          const existingTab = get().openTabs.find((tab) => tab.path === state.activeFile?.path)
-          const cleanTab = await readOpenTabFromDisk(
-            state.activeFile,
-            (existingTab?.sceneVersion || 0) + 1
-          )
-
-          set((currentState) => ({
-            activeFile: toExcalidrawFile(cleanTab),
-            fileContent: cleanTab.cachedContent,
-            activeFileLoadSource: 'disk',
-            isDirty: false,
-            openTabs: currentState.openTabs.map((tab) =>
-              tab.path === cleanTab.path ? cleanTab : tab
-            ),
-          }))
-          state.markFileAsModified(cleanTab.path, false)
-          state.markTreeNodeAsModified(cleanTab.path, false)
-        } catch (error) {
-          console.error('Failed to discard unsaved changes:', error)
-          alert(t("Failed to discard unsaved changes: {error}", { error: String(error) }))
-          return
-        }
       }
     }
 
+    if (!isCurrent()) return
+    state.markFileAsModified(filePath, false)
+    state.markTreeNodeAsModified(filePath, false)
     const newTabs = get().openTabs.filter(t => t.path !== filePath)
 
     if (state.activeFile?.path === filePath) {

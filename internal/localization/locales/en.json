@@ -124,6 +124,6 @@
   "A file with this name is already open.": "A file with this name is already open.",
   "Failed to move file: {error}": "Failed to move file: {error}",
   "Drop files here to move to the workspace root": "Drop files here to move to the workspace root",
-  "Moving file...": "Moving file...",
+  "Updating files...": "Updating files...",
   "Drop onto a folder or the workspace name to move.": "Drop onto a folder or the workspace name to move."
 }

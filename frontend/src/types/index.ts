@@ -11,6 +11,8 @@ export interface CachedExcalidrawScene {
 }
 
 export interface OpenTab extends ExcalidrawFile {
+  // Session-only identity: renaming a path must not discard editor undo state.
+  editorKey?: string
   cachedContent: string
   contentHash: string
   cachedScene: CachedExcalidrawScene

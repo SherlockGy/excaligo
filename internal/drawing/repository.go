@@ -331,7 +331,7 @@ func (r *Repository) rename(path, name string, folder bool) (string, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
-	if err := root.Rename(rel, newRel); err != nil {
+	if err := storage.MoveNoReplace(root, rel, newRel); err != nil {
 		return "", err
 	}
 	r.logger.Info(logPrefix, "newName", clean)

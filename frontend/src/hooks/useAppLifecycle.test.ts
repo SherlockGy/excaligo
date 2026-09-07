@@ -60,7 +60,7 @@ it('does not autosave in read-only mode or during the save-to-read-only transiti
   useStore.setState({ readOnly: false, savingBeforeReadOnly: true })
   await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
   expect(save).not.toHaveBeenCalled()
-  useStore.setState({ savingBeforeReadOnly: false, movingFilePath: '/work/file.excalidraw' })
+  useStore.setState({ savingBeforeReadOnly: false, fileMutationPath: '/work/file.excalidraw' })
   await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
   expect(save).not.toHaveBeenCalled()
   unmount()
@@ -70,7 +70,7 @@ it('does not prune tabs or force quit during a move and refreshes after it compl
   const tab = { name: 'file.excalidraw', path: '/work/file.excalidraw', modified: false,
     cachedContent: '{}', cachedScene: { elements: [], appState: {} }, contentHash: '', sceneVersion: 0 }
   const refresh = vi.fn().mockResolvedValue(undefined)
-  useStore.setState({ currentDirectory: '/work', activeFile: tab, openTabs: [tab], movingFilePath: tab.path, loadFileTree: refresh })
+  useStore.setState({ currentDirectory: '/work', activeFile: tab, openTabs: [tab], fileMutationPath: tab.path, loadFileTree: refresh })
   const { unmount } = renderHook(useAppLifecycle)
   const change = mockListen.mock.calls.find(([name]) => name === 'file-system-change')![1]
   const close = mockListen.mock.calls.find(([name]) => name === 'check-unsaved-before-close')![1]
@@ -78,8 +78,57 @@ it('does not prune tabs or force quit during a move and refreshes after it compl
   expect(useStore.getState().openTabs).toEqual([tab])
   expect(mockInvoke).not.toHaveBeenCalledWith('force_close_app')
   expect(refresh).not.toHaveBeenCalled()
-  await act(async () => { useStore.setState({ movingFilePath: null, files: [tab] }) })
+  await act(async () => { useStore.setState({ fileMutationPath: null, files: [tab] }) })
   expect(refresh).toHaveBeenCalledWith('/work')
   expect(useStore.getState().activeFile).toEqual(tab)
   unmount()
 })
+
+it('does not quit and lose edits received while the close confirmation is pending', async () => {
+  let resolve!: (value: boolean) => void
+  mockAsk.mockReturnValueOnce(new Promise<boolean>(done => { resolve = done })).mockResolvedValueOnce(true)
+  useStore.setState({ isDirty: true, fileContent: 'before' })
+  const { unmount } = renderHook(useAppLifecycle)
+  const close = mockListen.mock.calls.find(([name]) => name === 'check-unsaved-before-close')![1]
+  await act(async () => {
+    const closing = close({ payload: null })
+    useStore.setState({ fileContent: 'latest' })
+    resolve(false)
+    await closing
+  })
+  expect(mockInvoke).not.toHaveBeenCalledWith('force_close_app')
+  expect(useStore.getState().fileContent).toBe('latest')
+  unmount()
+})
+
+it('saves background dirty tabs before closing the application', async () => {
+  const content = '{"type":"excalidraw","version":2,"elements":[]}'
+  const tab = { name: 'background.excalidraw', path: '/work/background.excalidraw', modified: true,
+    cachedContent: content, contentHash: '', sceneVersion: 0, cachedScene: { elements: [], appState: {}, files: {} } }
+  useStore.setState({ openTabs: [tab] })
+  mockAsk.mockResolvedValue(true)
+  mockInvoke.mockImplementation(async command => command === 'save_file' ? 'saved' : [])
+  const { unmount } = renderHook(useAppLifecycle)
+  const close = mockListen.mock.calls.find(([name]) => name === 'check-unsaved-before-close')![1]
+  await act(async () => { await close({ payload: null }) })
+  expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: tab.path, content })
+  expect(useStore.getState().openTabs[0].modified).toBe(false)
+  expect(mockInvoke).toHaveBeenCalledWith('force_close_app')
+  unmount()
+})
+
+it.each([['/drawing.excalidraw', '/'], ['C:\\drawing.excalidraw', 'C:\\']])(
+  'opens an associated file at the filesystem root: %s', async (path, directory) => {
+    const loadFile = vi.fn().mockResolvedValue(undefined)
+    const loadDirectory = vi.fn().mockImplementation(async dir => {
+      useStore.setState({ currentDirectory: dir })
+      return true
+    })
+    useStore.setState({ loadDirectory, loadFile })
+    mockInvoke.mockImplementation(async command => command === 'pending_open_files' ? [path] : [])
+    const { unmount } = renderHook(useAppLifecycle)
+    await waitFor(() => expect(loadFile).toHaveBeenCalledWith(expect.objectContaining({ path })))
+    expect(loadDirectory).toHaveBeenCalledWith(directory)
+    unmount()
+  },
+)

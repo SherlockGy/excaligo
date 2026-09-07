@@ -70,12 +70,45 @@ func TestMoveNoReplaceRejectsParentEscapeAndKeepsSource(t *testing.T) {
 	if err := root.WriteFile("source", []byte("original"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{filepath.Join("..", "outside"), filepath.Join("missing", "file"), filepath.Join("source", "child")} {
+	for _, target := range []string{".", "", filepath.Join("..", "outside"), filepath.Join("missing", "file"), filepath.Join("source", "child")} {
 		if err := MoveNoReplace(root, "source", target); err == nil {
 			t.Fatalf("accepted %s", target)
 		}
 	}
+	for _, source := range []string{".", "..", "", filepath.Join("source", ".."), filepath.Join(dir, "source")} {
+		if err := MoveNoReplace(root, source, "renamed"); err == nil {
+			t.Fatalf("accepted non-child source %q", source)
+		}
+	}
 	if data, err := root.ReadFile("source"); err != nil || string(data) != "original" {
 		t.Fatal("source changed", err)
+	}
+}
+
+func TestMoveNoReplaceDirectory(t *testing.T) {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	for _, name := range []string{"source", "existing"} {
+		if err := root.Mkdir(name, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := root.WriteFile("source/drawing.excalidraw", []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := MoveNoReplace(root, "source", "existing"); err == nil {
+		t.Fatal("overwrote an existing empty directory")
+	}
+	if err := MoveNoReplace(root, "source", "新"); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := root.ReadFile("新/drawing.excalidraw"); err != nil || string(data) != "original" {
+		t.Fatal("directory content changed", err)
+	}
+	if _, err := root.Stat("source"); !os.IsNotExist(err) {
+		t.Fatal("source directory still exists", err)
 	}
 }

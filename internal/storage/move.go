@@ -10,6 +10,12 @@ import (
 // using a platform rename that atomically refuses an existing destination.
 // It never falls back to copy/delete, so failed moves leave the source intact.
 func MoveNoReplace(root *os.Root, source, destination string) error {
+	for _, name := range []string{source, destination} {
+		if !filepath.IsLocal(name) || filepath.Clean(name) == "." {
+			return fmt.Errorf("move path must be a child of the opened root: %s", name)
+		}
+	}
+	source, destination = filepath.Clean(source), filepath.Clean(destination)
 	sourceDir, err := root.Open(filepath.Dir(source))
 	if err != nil {
 		return err

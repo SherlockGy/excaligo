@@ -50,7 +50,7 @@ export function useSidebarFileDrag() {
         const row = target instanceof Element ? target.closest<HTMLElement>('[data-file-draggable="true"]') : null
         const path = row?.dataset.filePath
         const node = path && findTreeNode(state.fileTree, path)
-        if (!node || node.is_directory || state.movingFilePath || state.savingBeforeReadOnly ||
+        if (!node || node.is_directory || state.fileMutationPath || state.savingBeforeReadOnly ||
           (target instanceof Element && target.closest('button, input'))) return
         startRef.current = { path: node.path, x: event.clientX, y: event.clientY, pointerId: event.pointerId }
       },

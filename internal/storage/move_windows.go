@@ -31,7 +31,7 @@ func moveNoReplace(sourceDir *os.File, source string, targetDir *os.File, destin
 	var handle windows.Handle
 	err = windows.NtCreateFile(&handle, windows.DELETE|windows.SYNCHRONIZE, &attributes, &status,
 		nil, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN,
-		windows.FILE_NON_DIRECTORY_FILE|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
+		windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,8 @@ func moveNoReplace(sourceDir *os.File, source string, targetDir *os.File, destin
 	}
 	byteLength := (len(encoded) - 1) * 2
 	var layout fileRenameInformation
-	buffer := make([]byte, int(unsafe.Offsetof(layout.FileName))+byteLength)
+	// Include the entire header even for a one-character directory name.
+	buffer := make([]byte, max(int(unsafe.Sizeof(layout)), int(unsafe.Offsetof(layout.FileName))+byteLength))
 	info := (*fileRenameInformation)(unsafe.Pointer(&buffer[0]))
 	info.RootDirectory = windows.Handle(targetDir.Fd())
 	info.FileNameLength = uint32(byteLength)

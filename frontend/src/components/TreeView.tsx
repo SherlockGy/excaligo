@@ -59,10 +59,7 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
     renameFolder,
     deleteFile,
     deleteFolder,
-    activeFile,
-    isDirty,
-    openTabs,
-    movingFilePath,
+    fileMutationPath,
     savingBeforeReadOnly,
   } = useStore()
 
@@ -179,7 +176,10 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
       )
 
       if (confirmed === true) {
-        const hasUnsavedFile = !node.is_directory && activeFile?.path === node.path && isDirty
+        const { activeFile, isDirty, openTabs } = useStore.getState()
+        const hasUnsavedFile = !node.is_directory && (
+          (activeFile?.path === node.path && isDirty) || openTabs.some(tab => tab.path === node.path && tab.modified)
+        )
         const hasUnsavedFolderFile = node.is_directory && (
           (activeFile && isDirty && isPathInsideDirectory(activeFile.path, node.path)) ||
           openTabs.some((tab) => tab.modified && isPathInsideDirectory(tab.path, node.path))
@@ -240,7 +240,7 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
           draggedFilePath === node.path && 'file-dragging'
         )}
         draggable={false}
-        data-file-draggable={!node.is_directory && !isRenaming && !movingFilePath && !savingBeforeReadOnly ? 'true' : undefined}
+        data-file-draggable={!node.is_directory && !isRenaming && !fileMutationPath && !savingBeforeReadOnly ? 'true' : undefined}
         data-file-path={!node.is_directory ? node.path : undefined}
         data-drop-directory={node.is_directory ? node.path : undefined}
         style={{ paddingLeft: `${8 + depth * 20}px` }}

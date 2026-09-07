@@ -105,3 +105,17 @@ it('keeps presentation in view mode even if the document is editable', () => {
   change([{ id: 'ignored-in-presentation' }])
   expect(useStore.getState().isDirty).toBe(false)
 })
+
+it('keeps the editor instance and undo history when the tab path changes', () => {
+  prepareDocument()
+  useStore.setState({ openTabs: [{ ...useStore.getState().openTabs[0], editorKey: 'stable-session' }] })
+  render(<ExcalidrawEditor />)
+  const mounted = editor.mounted.mock.calls.length
+  act(() => {
+    const state = useStore.getState()
+    const renamed = { ...state.openTabs[0], name: 'renamed.excalidraw', path: '/work/renamed.excalidraw' }
+    useStore.setState({ activeFile: renamed, openTabs: [renamed] })
+  })
+  expect(editor.mounted).toHaveBeenCalledTimes(mounted)
+  expect(editor.unmounted).not.toHaveBeenCalled()
+})
