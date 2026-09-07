@@ -33,6 +33,7 @@ export interface AppState {
 }
 
 export interface Preferences {
+  language: 'en' | 'zh'
   lastDirectory: string | null
   recentDirectories: string[]
   theme: 'light' | 'dark' | 'system'

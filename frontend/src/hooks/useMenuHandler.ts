@@ -1,3 +1,4 @@
+import { t } from './useTranslation'
 import { useEffect } from 'react'
 import { listen, invoke, getCurrentWindow } from '../lib/backend'
 import { useStore } from '../store/useStore'
@@ -26,8 +27,8 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
       }
       const folder = command === 'new_folder'
       const name = await promptForName({
-        title: folder ? 'Folder name' : 'File name',
-        defaultValue: folder ? 'New Folder' : 'Untitled.excalidraw', confirmLabel: 'Create',
+        title: folder ? t('Folder name') : t('File name'),
+        defaultValue: folder ? t('New Folder') : t('Untitled.excalidraw'), confirmLabel: t('Create'),
       })
       if (name) {
         if (folder) await useStore.getState().createNewFolder(name)
@@ -88,9 +89,11 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
     case 'toggle_decorations': state.toggleDecorations(); return
     case 'theme':
       if (data === 'light' || data === 'dark' || data === 'system') {
-        state.setPreferences({ ...state.preferences, theme: data })
-        await useStore.getState().savePreferences()
+        await state.updateAppearance({ theme: data })
       }
+      return
+    case 'language':
+      if (data === 'en' || data === 'zh') await state.updateAppearance({ language: data })
       return
     case 'zoom_in':
     case 'zoom_out': {
@@ -117,29 +120,23 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
     }
     case 'minimize': await getCurrentWindow().minimize(); return
     case 'keyboard_shortcuts':
-      alert(`Keyboard Shortcuts:
-
-File:
-  Open Directory: Cmd/Ctrl+O
-  New File: Cmd/Ctrl+N
-  New Folder: Cmd/Ctrl+Shift+N
-  Save: Cmd/Ctrl+S
-  Save As: Cmd/Ctrl+Shift+S
-  Quit: Cmd/Ctrl+Q
-
-View:
-  Toggle Sidebar: Cmd/Ctrl+B
-  Zoom: Cmd/Ctrl++ / Cmd/Ctrl+-
-  Reset Zoom: Cmd/Ctrl+0
-  Fullscreen: F11 (Ctrl+Cmd+F on Mac)
-  Presentation Mode: F5 (Escape to exit)
-  Window Decorations: Cmd/Ctrl+Shift+D
-
-Tabs:
-  Close Tab: Cmd/Ctrl+W
-  Switch Tabs: Cmd/Ctrl+Tab / Cmd/Ctrl+Shift+Tab
-
-Editing shortcuts are handled by Excalidraw.`)
+      alert([
+        t('Keyboard Shortcuts'), '',
+        t('Open Directory') + ': Cmd/Ctrl+O',
+        t('New File') + ': Cmd/Ctrl+N',
+        t('New Folder') + ': Cmd/Ctrl+Shift+N',
+        t('Save') + ': Cmd/Ctrl+S',
+        t('Save As...') + ': Cmd/Ctrl+Shift+S',
+        t('Quit') + ': Cmd/Ctrl+Q', '',
+        t('Toggle Sidebar') + ': Cmd/Ctrl+B',
+        t('Zoom In') + ' / ' + t('Zoom Out') + ': Cmd/Ctrl++ / Cmd/Ctrl+-',
+        t('Reset Zoom') + ': Cmd/Ctrl+0',
+        t('Toggle Fullscreen') + ': F11 / Ctrl+Cmd+F (Mac)',
+        t('Presentation Mode') + ': F5', t('Exit presentation: Escape'),
+        t('Toggle Window Decorations') + ': Cmd/Ctrl+Shift+D', '',
+        t('Close Tab') + ': Cmd/Ctrl+W', t('Switch Tabs: Cmd/Ctrl+Tab / Cmd/Ctrl+Shift+Tab'), '',
+        t('Editing shortcuts are handled by Excalidraw.'),
+      ].join('\n'))
       return
     default:
       if (/^recent_dir_\d+$/.test(command) && data && typeof data === 'object' &&

@@ -54,3 +54,37 @@ func TestInvalidPreferencesDoNotOverwrite(t *testing.T) {
 		t.Fatal("silently accepted corrupt preferences")
 	}
 }
+
+func TestLanguageAndThemePersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "preferences.json")
+	s := New(path, nil)
+	for _, language := range []string{"zh", "en"} {
+		for _, theme := range []string{"light", "dark", "system"} {
+			p := Default()
+			p.Language, p.Theme = language, theme
+			if err := s.Save(p); err != nil {
+				t.Fatal(err)
+			}
+			got, err := New(path, nil).Load()
+			if err != nil || got.Language != language || got.Theme != theme {
+				t.Fatalf("%+v %v", got, err)
+			}
+		}
+	}
+	invalid := Default()
+	invalid.Language = "fr"
+	if err := s.Save(invalid); err == nil {
+		t.Fatal("accepted unsupported language")
+	}
+	got, _ := s.Load()
+	if got.Language != "en" {
+		t.Fatal("invalid write damaged preferences")
+	}
+	if err := os.WriteFile(path, []byte(`{"preferences":{"theme":"dark"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Load()
+	if err != nil || got.Language != "en" || got.Theme != "dark" {
+		t.Fatalf("legacy: %+v %v", got, err)
+	}
+}

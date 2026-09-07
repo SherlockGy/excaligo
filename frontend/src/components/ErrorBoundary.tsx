@@ -1,3 +1,4 @@
+import { t } from '../hooks/useTranslation'
 import React, { Component, ErrorInfo, ReactNode } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 
@@ -33,7 +34,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   private handleReload = () => {
-    window.location.reload()
+    if (window.confirm(t('Reloading may discard unsaved changes. Continue?'))) window.location.reload()
   }
 
   public render() {
@@ -48,25 +49,25 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="flex items-center mb-4">
               <AlertCircle className="tree-menu-danger h-8 w-8 mr-3" />
               <h1 className="text-xl font-semibold">
-                Something went wrong
+                {t('Something went wrong')}
               </h1>
             </div>
 
             <div className="mb-6">
               <p className="sidebar-muted mb-2">
-                An unexpected error occurred. The error has been logged and we'll look into it.
+                {t('An unexpected error occurred. Your unsaved changes may still be in memory; try again before reloading.')}
               </p>
 
               {this.state.error && (
                 <details className="mt-4">
                   <summary className="sidebar-muted cursor-pointer text-sm">
-                    Technical details
+                    {t('Technical details')}
                   </summary>
                   <pre className="error-details mt-2 p-2 rounded text-xs overflow-auto">
                     {this.state.error.toString()}
                     {this.state.errorInfo && (
                       <>
-                        {'\n\nComponent Stack:'}
+                        {'\n\n' + t('Component Stack:')}
                         {this.state.errorInfo.componentStack}
                       </>
                     )}
@@ -80,7 +81,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 onClick={this.handleReset}
                 className="error-secondary-button flex-1 px-4 py-2 rounded transition-colors"
               >
-                Try Again
+                {t('Try Again')}
               </button>
 
               <button
@@ -88,7 +89,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 className="error-primary-button flex-1 px-4 py-2 rounded transition-colors flex items-center justify-center"
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
-                Reload App
+                {t('Reload App')}
               </button>
             </div>
           </div>

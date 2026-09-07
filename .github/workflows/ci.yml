@@ -2,7 +2,11 @@ name: CI
 on: [push, pull_request]
 jobs:
   verify:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -14,11 +18,18 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: node scripts/build.mjs --ci --package
+      - if: runner.os == 'macOS'
+        run: node scripts/build.mjs --ci --package
+      - if: runner.os == 'Windows'
+        run: node scripts/build.mjs --ci
       - run: go vet ./...
       - run: go test -race -coverprofile=coverage.out ./...
       - run: npm --prefix frontend run test:run
+      - if: runner.os == 'macOS'
+        run: tar -czf bin/Excaligo-macos.tar.gz -C bin Excaligo.app
       - uses: actions/upload-artifact@v4
         with:
-          name: excaligo-macos
-          path: bin/Excaligo.app
+          name: excaligo-${{ runner.os }}
+          path: |
+            bin/Excaligo-macos.tar.gz
+            bin/excaligo.exe

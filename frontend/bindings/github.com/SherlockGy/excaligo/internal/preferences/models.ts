@@ -5,6 +5,7 @@ export interface Preferences {
     "last_directory": string | null;
     "recent_directories": string[] | null;
     "theme": string;
+    "language": string;
     "sidebar_visible": boolean;
     "show_decorations": boolean;
 }

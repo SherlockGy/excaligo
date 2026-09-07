@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 
 	"github.com/SherlockGy/excaligo/internal/drawing"
+	"github.com/SherlockGy/excaligo/internal/localization"
 	"github.com/SherlockGy/excaligo/internal/preferences"
 	"github.com/SherlockGy/excaligo/internal/storage"
 	"github.com/SherlockGy/excaligo/internal/watcher"
@@ -21,26 +22,29 @@ import (
 )
 
 type Service struct {
-	app          *application.App
-	window       *application.WebviewWindow
-	files        *drawing.Repository
-	prefs        *preferences.Store
-	watcher      *watcher.Watcher
-	logger       *slog.Logger
-	allowClose   atomic.Bool
-	closePending atomic.Bool
-	menuVisible  bool
-	menuMu       sync.Mutex
-	pendingMu    sync.Mutex
-	pendingFiles []string
+	app           *application.App
+	window        *application.WebviewWindow
+	files         *drawing.Repository
+	prefs         *preferences.Store
+	watcher       *watcher.Watcher
+	logger        *slog.Logger
+	allowClose    atomic.Bool
+	closePending  atomic.Bool
+	menuVisible   bool
+	menuMu        sync.Mutex
+	menu          *application.Menu
+	menuSignature string
+	pendingMu     sync.Mutex
+	pendingFiles  []string
 }
 
 func (s *Service) ServiceStartup(context.Context, application.ServiceOptions) error { return nil }
 func (s *Service) ServiceShutdown() error                                           { return errors.Join(s.watcher.Close(), s.files.Close()) }
 
 func (s *Service) SelectDirectory() (*string, error) {
+	tr := s.translator()
 	path, err := s.app.Dialog.OpenFile().CanChooseFiles(false).CanChooseDirectories(true).
-		SetTitle("Open Directory").AttachToWindow(s.window).PromptForSingleSelection()
+		SetTitle(tr("Open Directory")).SetButtonText(tr("Select Directory")).AttachToWindow(s.window).PromptForSingleSelection()
 	if err != nil || path == "" {
 		return nil, err
 	}
@@ -87,7 +91,8 @@ func (s *Service) SaveFileAs(content string) (*string, error) {
 	if err := drawing.Validate(content); err != nil {
 		return nil, err
 	}
-	path, err := s.app.Dialog.SaveFile().SetFilename("Untitled.excalidraw").
+	tr := s.translator()
+	path, err := s.app.Dialog.SaveFile().SetFilename(tr("Untitled.excalidraw")).SetMessage(tr("Save As...")).SetButtonText(tr("Save")).
 		AddFilter("Excalidraw", "*.excalidraw").AttachToWindow(s.window).PromptForSingleSelection()
 	if err != nil || path == "" {
 		return nil, err
@@ -152,6 +157,7 @@ type DialogOptions struct {
 }
 
 func (s *Service) Ask(ctx context.Context, message string, options DialogOptions) (bool, error) {
+	tr := s.translator()
 	dialog := s.app.Dialog.Question()
 	if options.Kind == "warning" {
 		dialog = s.app.Dialog.Warning()
@@ -162,10 +168,10 @@ func (s *Service) Ask(ctx context.Context, message string, options DialogOptions
 	reply := func(value bool) { once.Do(func() { result <- value }) }
 	okLabel, cancelLabel := options.OKLabel, options.CancelLabel
 	if okLabel == "" {
-		okLabel = "OK"
+		okLabel = tr("OK")
 	}
 	if cancelLabel == "" {
-		cancelLabel = "Cancel"
+		cancelLabel = tr("Cancel")
 	}
 	dialog.AddButton(okLabel).SetAsDefault().OnClick(func() { reply(true) })
 	dialog.AddButton(cancelLabel).SetAsCancel().OnClick(func() { reply(false) })
@@ -186,7 +192,9 @@ func (s *Service) Message(message string, options DialogOptions) {
 	if options.Kind == "warning" {
 		dialog = s.app.Dialog.Warning()
 	}
-	dialog.SetTitle(options.Title).SetMessage(message).AttachToWindow(s.window).Show()
+	dialog.SetTitle(options.Title).SetMessage(message).AttachToWindow(s.window)
+	dialog.AddButton(s.translator()("OK")).SetAsDefault().SetAsCancel()
+	dialog.Show()
 }
 
 // ExportFile supports browser-originated Excalidraw, PNG, SVG and library exports.
@@ -204,7 +212,8 @@ func (s *Service) ExportFile(name, encoded string) error {
 	if err != nil {
 		return err
 	}
-	path, err := s.app.Dialog.SaveFile().SetFilename(name).AddFilter("Export", "*"+ext).
+	tr := s.translator()
+	path, err := s.app.Dialog.SaveFile().SetFilename(name).SetMessage(tr("Export")).SetButtonText(tr("Save")).AddFilter(tr("Export"), "*"+ext).
 		AttachToWindow(s.window).PromptForSingleSelection()
 	if err != nil {
 		return err
@@ -250,4 +259,9 @@ func (s *Service) queueOpenFile(path string) {
 	s.pendingFiles = append(s.pendingFiles, path)
 	s.pendingMu.Unlock()
 	s.app.Event.Emit("open-files")
+}
+
+func (s *Service) translator() func(string) string {
+	prefs, _ := s.prefs.Load()
+	return func(key string) string { return localization.Text(prefs.Language, key) }
 }

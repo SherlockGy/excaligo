@@ -1,8 +1,10 @@
+import { useTranslation } from '../hooks/useTranslation'
 import { X } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { cn } from '../lib/utils'
 
 export function TabBar() {
+  const t = useTranslation()
   const openTabs = useStore(state => state.openTabs)
   const activeFile = useStore(state => state.activeFile)
   const loadFile = useStore(state => state.loadFile)
@@ -44,8 +46,8 @@ export function TabBar() {
                   e.stopPropagation()
                   closeTab(tab.path)
                 }}
-                title="Close tab"
-                aria-label={`Close ${tab.name}`}
+                title={t('Close tab')}
+                aria-label={t('Close {name}', { name: tab.name })}
               >
                 <X className="w-3 h-3" />
               </button>

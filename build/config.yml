@@ -21,9 +21,9 @@ dev_mode:
       type: background
     - cmd: wails3 generate bindings -ts -i ./cmd/excaligo
       type: blocking
-    - cmd: go build -o bin/excaligo ./cmd/excaligo
+    - cmd: go build -o bin/ ./cmd/excaligo
       type: blocking
-    - cmd: ./bin/excaligo
+    - cmd: node scripts/run.mjs
       type: primary
 fileAssociations:
   - ext: excalidraw

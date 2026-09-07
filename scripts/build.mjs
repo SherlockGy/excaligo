@@ -31,7 +31,8 @@ run(npm, ['run', 'build'], frontend)
 if (process.platform === 'darwin') env.GOTOOLCHAIN = 'go1.26.8'
 const binary = process.platform === 'win32' ? 'excaligo.exe' : 'excaligo'
 const tags = args.has('--server') ? 'production,server' : 'production'
-run('go', ['build', '-tags', tags, '-trimpath', '-ldflags=-s -w', '-o', join('bin', binary), './cmd/excaligo'])
+const ldflags = process.platform === 'win32' && !args.has('--server') ? '-s -w -H windowsgui' : '-s -w'
+run('go', ['build', '-tags', tags, '-trimpath', `-ldflags=${ldflags}`, '-o', join('bin', binary), './cmd/excaligo'])
 
 if (args.has('--package') || args.has('--dmg')) {
   if (process.platform !== 'darwin') throw new Error('The .app/DMG packaging target requires macOS')

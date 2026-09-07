@@ -3,6 +3,7 @@ import { invoke } from '../lib/backend'
 import { CachedExcalidrawScene, ExcalidrawFile, FileTreeNode, OpenTab, Preferences } from '../types'
 import { convertPreferencesFromBackend, convertPreferencesToBackend } from '../lib/preferences'
 import { ask } from '../lib/backend'
+import { translate, type MessageKey, type Parameters } from '../lib/i18n'
 
 type UnsavedChangesDecision = 'save' | 'discard' | 'cancel'
 type FileLoadSource = 'cache' | 'disk' | null
@@ -10,6 +11,12 @@ const savingFiles = new Map<string, Promise<string>>()
 let fileLoadGeneration = 0
 let directoryLoadGeneration = 0
 let directoryWatch: Promise<unknown> = Promise.resolve()
+let preferenceWrites: Promise<unknown> = Promise.resolve()
+let appearanceGeneration = 0
+
+function t(key: MessageKey, parameters?: Parameters): string {
+  return translate(useStore.getState().preferences.language, key, parameters)
+}
 
 interface FileContentResult {
   content: string
@@ -63,12 +70,12 @@ async function confirmUnsavedChanges(
   actionDescription: string
 ): Promise<UnsavedChangesDecision> {
   const shouldSave = await ask(
-    `Do you want to save changes to "${fileName}" before ${actionDescription}?`,
+    t('Do you want to save changes to "{name}" before {action}?', { name: fileName, action: actionDescription }),
     {
-      title: 'Unsaved Changes',
+      title: t('Unsaved Changes'),
       kind: 'warning',
-      okLabel: 'Save',
-      cancelLabel: "Don't Save",
+      okLabel: t('Save'),
+      cancelLabel: t("Don't Save"),
     }
   )
 
@@ -77,12 +84,12 @@ async function confirmUnsavedChanges(
   }
 
   const shouldDiscard = await ask(
-    `Discard unsaved changes to "${fileName}"?`,
+    t('Discard unsaved changes to "{name}"?', { name: fileName }),
     {
-      title: 'Discard Unsaved Changes',
+      title: t('Discard Unsaved Changes'),
       kind: 'warning',
-      okLabel: "Don't Save",
-      cancelLabel: 'Cancel',
+      okLabel: t("Don't Save"),
+      cancelLabel: t('Cancel'),
     }
   )
 
@@ -152,7 +159,8 @@ interface AppStore {
   deleteFile: (filePath: string) => Promise<boolean>
   deleteFolder: (folderPath: string) => Promise<boolean>
   loadPreferences: () => Promise<void>
-  savePreferences: () => Promise<void>
+  savePreferences: () => Promise<boolean>
+  updateAppearance: (updates: Partial<Pick<Preferences, 'theme' | 'language'>>) => Promise<void>
   toggleSidebar: () => void
 }
 
@@ -168,6 +176,7 @@ export const useStore = create<AppStore>((set, get) => ({
     lastDirectory: null,
     recentDirectories: [],
     theme: 'system',
+    language: 'en',
     sidebarVisible: true,
     showDecorations: true,
   },
@@ -238,7 +247,7 @@ export const useStore = create<AppStore>((set, get) => ({
     try {
       const state = get()
       if (state.isDirty && state.activeFile) {
-        const decision = await confirmUnsavedChanges(state.activeFile.name, 'switching directories')
+        const decision = await confirmUnsavedChanges(state.activeFile.name, t('switching directories'))
         if (decision === 'cancel') return false
         if (decision === 'save') {
           await state.saveCurrentFile()
@@ -299,7 +308,7 @@ export const useStore = create<AppStore>((set, get) => ({
     } catch (error) {
       console.error(logPrefix, error)
       // Show user-friendly error message
-      alert(`Failed to load directory: ${error}`)
+      alert(t("Failed to load directory: {error}", { error: String(error) }))
       return false
     }
   },
@@ -335,7 +344,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
     // Check if current file has unsaved changes
     if (state.isDirty && state.activeFile) {
-      const decision = await confirmUnsavedChanges(state.activeFile.name, 'switching files')
+      const decision = await confirmUnsavedChanges(state.activeFile.name, t('switching files'))
 
       if (decision === 'save') {
         await state.saveCurrentFile()
@@ -363,7 +372,7 @@ export const useStore = create<AppStore>((set, get) => ({
           state.markTreeNodeAsModified(cleanTab.path, false)
         } catch (error) {
           console.error('Failed to discard unsaved changes:', error)
-          alert(`Failed to discard unsaved changes: ${error}`)
+          alert(t("Failed to discard unsaved changes: {error}", { error: String(error) }))
           return
         }
       }
@@ -416,7 +425,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
       // If file doesn't exist, refresh the tree and show error
       if (String(error).includes('No such file') || String(error).includes('not found')) {
-        alert(`File not found: ${file.name}\n\nThe file may have been deleted or moved. Refreshing file list...`)
+        alert(t('File not found: {name}\n\nThe file may have been deleted or moved. Refreshing file list...', { name: file.name }))
 
         // Clear active file if it's the one that failed
         if (state.activeFile?.path === file.path) {
@@ -434,7 +443,7 @@ export const useStore = create<AppStore>((set, get) => ({
         }
       } else {
         // Other errors
-        alert(`Failed to load file: ${error}`)
+        alert(t("Failed to load file: {error}", { error: String(error) }))
       }
     }
   },
@@ -516,7 +525,7 @@ export const useStore = create<AppStore>((set, get) => ({
       }))
     } catch (error) {
       console.error('[saveCurrentFile] Failed to save file:', error)
-      alert(`Failed to save file: ${error}`)
+      alert(t("Failed to save file: {error}", { error: String(error) }))
       throw error
     } finally {
       savingFiles.delete(activeFile.path)
@@ -530,7 +539,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
     // Check if current file has unsaved changes
     if (state.isDirty && state.activeFile) {
-      const decision = await confirmUnsavedChanges(state.activeFile.name, 'creating a new file')
+      const decision = await confirmUnsavedChanges(state.activeFile.name, t('creating a new file'))
 
       if (decision === 'save') {
         await state.saveCurrentFile()
@@ -558,7 +567,7 @@ export const useStore = create<AppStore>((set, get) => ({
           state.markTreeNodeAsModified(cleanTab.path, false)
         } catch (error) {
           console.error('Failed to discard unsaved changes:', error)
-          alert(`Failed to discard unsaved changes: ${error}`)
+          alert(t("Failed to discard unsaved changes: {error}", { error: String(error) }))
           return
         }
       }
@@ -577,7 +586,7 @@ export const useStore = create<AppStore>((set, get) => ({
         currentDirectory = dir
       } catch (error) {
         console.error('Failed to select directory:', error)
-        alert(`Failed to select directory: ${error}`)
+        alert(t("Failed to select directory: {error}", { error: String(error) }))
         return
       }
     }
@@ -610,7 +619,7 @@ export const useStore = create<AppStore>((set, get) => ({
       await state.loadFile(file)
     } catch (error) {
       console.error('Failed to create new file:', error)
-      alert(`Failed to create file: ${error}`)
+      alert(t("Failed to create file: {error}", { error: String(error) }))
     }
   },
 
@@ -632,7 +641,7 @@ export const useStore = create<AppStore>((set, get) => ({
         currentDirectory = dir
       } catch (error) {
         console.error('[createNewFolder] Failed to select directory:', error)
-        alert(`Failed to select directory: ${error}`)
+        alert(t("Failed to select directory: {error}", { error: String(error) }))
         return
       }
     }
@@ -651,7 +660,7 @@ export const useStore = create<AppStore>((set, get) => ({
       await state.loadFileTree(currentDirectory)
     } catch (error) {
       console.error('[createNewFolder] Failed to create folder:', error)
-      alert(`Failed to create folder: ${error}`)
+      alert(t("Failed to create folder: {error}", { error: String(error) }))
     }
   },
 
@@ -688,7 +697,7 @@ export const useStore = create<AppStore>((set, get) => ({
       }
     } catch (error) {
       console.error('Failed to rename file:', error)
-      alert(`Failed to rename file: ${error}`)
+      alert(t("Failed to rename file: {error}", { error: String(error) }))
     }
   },
 
@@ -732,7 +741,7 @@ export const useStore = create<AppStore>((set, get) => ({
       }
     } catch (error) {
       console.error('Failed to rename folder:', error)
-      alert(`Failed to rename folder: ${error}`)
+      alert(t("Failed to rename folder: {error}", { error: String(error) }))
     }
   },
 
@@ -852,6 +861,7 @@ export const useStore = create<AppStore>((set, get) => ({
         lastDirectory: null,
         recentDirectories: [],
         theme: 'system',
+        language: 'en',
         sidebarVisible: true,
         showDecorations: true,
       }
@@ -864,13 +874,35 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Save preferences
   savePreferences: async () => {
+    const logPrefix = '[savePreferences 保存应用设置][app=excaligo]'
     const { preferences } = get()
     try {
       // Convert camelCase to snake_case for Go backend
       const prefsToSave = convertPreferencesToBackend(preferences)
-      await invoke('save_preferences', { preferences: prefsToSave })
+      preferenceWrites = preferenceWrites.catch(() => {}).then(() => invoke('save_preferences', { preferences: prefsToSave }))
+      await preferenceWrites
+      return true
     } catch (error) {
-      console.error('Failed to save preferences:', error)
+      console.error(logPrefix, error)
+      alert(t('Failed to save preferences: {error}', { error: String(error) }))
+      return false
+    }
+  },
+
+  updateAppearance: async (updates) => {
+    const generation = ++appearanceGeneration
+    const previous = get().preferences
+    const next = { ...previous, ...updates }
+    set({ preferences: next })
+    if (!await get().savePreferences()) {
+      if (generation !== appearanceGeneration) return
+      // Roll back only this failed selection, never a subsequent user choice.
+      set(state => {
+        const rollback: Partial<Preferences> = {}
+        if (updates.theme && state.preferences.theme === updates.theme) rollback.theme = previous.theme
+        if (updates.language && state.preferences.language === updates.language) rollback.language = previous.language
+        return { preferences: { ...state.preferences, ...rollback } }
+      })
     }
   },
 
@@ -918,7 +950,7 @@ export const useStore = create<AppStore>((set, get) => ({
       })
       .catch((error) => {
         console.error('Failed to toggle window decorations:', error)
-        alert(`Failed to toggle window decorations: ${error}`)
+        alert(t("Failed to toggle window decorations: {error}", { error: String(error) }))
       })
   },
 
@@ -932,7 +964,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
     // Check for unsaved changes if this is the active file
     if (state.activeFile?.path === filePath && state.isDirty) {
-      const decision = await confirmUnsavedChanges(tab.name, 'closing')
+      const decision = await confirmUnsavedChanges(tab.name, t('closing'))
 
       if (decision === 'save') {
         await state.saveCurrentFile()
@@ -960,7 +992,7 @@ export const useStore = create<AppStore>((set, get) => ({
           state.markTreeNodeAsModified(cleanTab.path, false)
         } catch (error) {
           console.error('Failed to discard unsaved changes:', error)
-          alert(`Failed to discard unsaved changes: ${error}`)
+          alert(t("Failed to discard unsaved changes: {error}", { error: String(error) }))
           return
         }
       }

@@ -26,4 +26,4 @@ tasks:
       - npm --prefix frontend run test:run
   run:
     cmds:
-      - ./bin/excaligo
+      - node scripts/run.mjs

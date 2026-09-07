@@ -1,3 +1,4 @@
+import { t } from './useTranslation'
 import { useEffect, useRef } from 'react'
 import { ask, invoke, listen } from '../lib/backend'
 import { TIMING } from '../constants'
@@ -56,14 +57,14 @@ export function useAppLifecycle() {
       try {
         const state = useStore.getState()
         if (state.isDirty) {
-          const save = await ask('Do you want to save your changes before closing?', {
-            title: 'Unsaved Changes', kind: 'warning', okLabel: 'Save & Close', cancelLabel: "Don't Save",
+          const save = await ask(t('Do you want to save your changes before closing?'), {
+            title: t('Unsaved Changes'), kind: 'warning', okLabel: t('Save & Close'), cancelLabel: t("Don't Save"),
           })
           if (save) {
             await state.saveCurrentFile()
             if (useStore.getState().isDirty) return
-          } else if (!await ask('Close without saving your changes?', {
-            title: 'Confirm Close', kind: 'warning', okLabel: 'Close Without Saving', cancelLabel: 'Cancel',
+          } else if (!await ask(t('Close without saving your changes?'), {
+            title: t('Confirm Close'), kind: 'warning', okLabel: t('Close Without Saving'), cancelLabel: t('Cancel'),
           })) return
         }
         await invoke('force_close_app')

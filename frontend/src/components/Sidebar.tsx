@@ -1,3 +1,4 @@
+import { useTranslation } from '../hooks/useTranslation'
 import { ScrollArea } from '@radix-ui/react-scroll-area'
 import { FolderOpen, Plus, FolderPlus } from 'lucide-react'
 import { useStore } from '../store/useStore'
@@ -20,6 +21,7 @@ function countFilesInTree(nodes: FileTreeNode[]): number {
 }
 
 export function Sidebar() {
+  const t = useTranslation()
   const {
     currentDirectory,
     fileTree,
@@ -40,16 +42,16 @@ export function Sidebar() {
     if (!currentDirectory) {
       const dir = await invoke<string | null>('select_directory')
       if (dir) {
-        await useStore.getState().loadDirectory(dir)
+        if (!await useStore.getState().loadDirectory(dir)) return
       } else {
         return
       }
     }
 
     const fileName = await promptForName({
-      title: 'File name',
-      defaultValue: 'Untitled.excalidraw',
-      confirmLabel: 'Create',
+      title: t('File name'),
+      defaultValue: t('Untitled.excalidraw'),
+      confirmLabel: t('Create'),
     })
     if (!fileName) {
       return
@@ -62,16 +64,16 @@ export function Sidebar() {
     if (!currentDirectory) {
       const dir = await invoke<string | null>('select_directory')
       if (dir) {
-        await useStore.getState().loadDirectory(dir)
+        if (!await useStore.getState().loadDirectory(dir)) return
       } else {
         return
       }
     }
 
     const folderName = await promptForName({
-      title: 'Folder name',
-      defaultValue: 'New Folder',
-      confirmLabel: 'Create',
+      title: t('Folder name'),
+      defaultValue: t('New Folder'),
+      confirmLabel: t('Create'),
     })
     if (!folderName) {
       return
@@ -90,26 +92,26 @@ export function Sidebar() {
         >
           <FolderOpen className="w-4 h-4" />
           <span className="text-sm font-medium truncate">
-            {currentDirectory ? currentDirectory.split('/').pop() : 'Select Directory'}
+            {currentDirectory ? currentDirectory.split(/[\\/]/).pop() : t('Select Directory')}
           </span>
         </button>
 
         <button
           onClick={handleNewFile}
           className="sidebar-action w-full mt-2 flex items-center gap-2 px-3 py-2 rounded-md transition-colors"
-          title={!currentDirectory ? 'Select a directory first' : 'Create a new Excalidraw file'}
+          title={!currentDirectory ? t('Select a directory first') : t('Create a new Excalidraw file')}
         >
           <Plus className="w-4 h-4" />
-          <span className="text-sm">New File</span>
+          <span className="text-sm">{t('New File')}</span>
         </button>
 
         <button
           onClick={handleNewFolder}
           className="sidebar-action w-full mt-2 flex items-center gap-2 px-3 py-2 rounded-md transition-colors"
-          title={!currentDirectory ? 'Select a directory first' : 'Create a new folder'}
+          title={!currentDirectory ? t('Select a directory first') : t('Create a new folder')}
         >
           <FolderPlus className="w-4 h-4" />
-          <span className="text-sm">New Folder</span>
+          <span className="text-sm">{t('New Folder')}</span>
         </button>
       </div>
 
@@ -118,7 +120,7 @@ export function Sidebar() {
         <div className="p-2">
           {fileTree.length === 0 ? (
             <div className="sidebar-muted text-sm text-center py-8">
-              {currentDirectory ? 'No .excalidraw files found' : 'No directory selected'}
+              {currentDirectory ? t('No .excalidraw files found') : t('No directory selected')}
             </div>
           ) : (
             <TreeView
@@ -133,7 +135,7 @@ export function Sidebar() {
       {/* Footer */}
       <div className="sidebar-section p-3 border-t">
         <div className="sidebar-muted text-xs">
-          {countFilesInTree(fileTree)} file{countFilesInTree(fileTree) !== 1 ? 's' : ''}
+          {t(countFilesInTree(fileTree) === 1 ? '{count} file' : '{count} files', { count: countFilesInTree(fileTree) })}
         </div>
       </div>
     </div>

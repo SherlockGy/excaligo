@@ -5,6 +5,7 @@ import { Preferences } from '../types'
  */
 export function convertPreferencesFromBackend(backendPrefs: any): Preferences {
   return {
+    language: backendPrefs?.language === 'zh' ? 'zh' : 'en',
     lastDirectory: backendPrefs?.last_directory || backendPrefs?.lastDirectory || null,
     recentDirectories: backendPrefs?.recent_directories || backendPrefs?.recentDirectories || [],
     theme: backendPrefs?.theme || 'system',
@@ -22,6 +23,7 @@ export function convertPreferencesFromBackend(backendPrefs: any): Preferences {
  */
 export function convertPreferencesToBackend(tsPrefs: Preferences): any {
   return {
+    language: tsPrefs.language,
     last_directory: tsPrefs.lastDirectory || null,
     recent_directories: tsPrefs.recentDirectories || [],
     theme: tsPrefs.theme || 'system',

@@ -18,12 +18,13 @@ type Preferences struct {
 	LastDirectory     *string  `json:"last_directory"`
 	RecentDirectories []string `json:"recent_directories"`
 	Theme             string   `json:"theme"`
+	Language          string   `json:"language"`
 	SidebarVisible    bool     `json:"sidebar_visible"`
 	ShowDecorations   bool     `json:"show_decorations"`
 }
 
 func Default() Preferences {
-	return Preferences{RecentDirectories: []string{}, Theme: "system", SidebarVisible: true, ShowDecorations: true}
+	return Preferences{RecentDirectories: []string{}, Theme: "system", Language: "en", SidebarVisible: true, ShowDecorations: true}
 }
 
 type Store struct {
@@ -72,6 +73,12 @@ func (s *Store) Load() (Preferences, error) {
 }
 
 func validate(p *Preferences) error {
+	if p.Language == "" {
+		p.Language = "en"
+	} // Backward-compatible preferences.
+	if p.Language != "en" && p.Language != "zh" {
+		return errors.New("invalid language")
+	}
 	if p.Theme != "system" && p.Theme != "light" && p.Theme != "dark" {
 		return errors.New("invalid theme")
 	}

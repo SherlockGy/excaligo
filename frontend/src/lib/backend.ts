@@ -46,7 +46,8 @@ export async function listen<T = unknown>(name: string, callback: (event: { payl
 }
 
 function dialogOptions(options: Partial<DialogOptions>): DialogOptions {
-  return { title: '', kind: 'info', okLabel: 'OK', cancelLabel: 'Cancel', ...options }
+  // Empty labels use the backend's persisted-language defaults.
+  return { title: '', kind: 'info', okLabel: '', cancelLabel: '', ...options }
 }
 export function ask(text: string, options: Partial<DialogOptions> = {}): Promise<boolean> {
   return Service.Ask(text, dialogOptions(options))

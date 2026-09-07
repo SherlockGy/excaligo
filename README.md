@@ -12,6 +12,9 @@
 # 在仓库根目录执行，安装依赖、生成绑定、构建前端与 Go 程序
 node scripts/build.mjs
 
+# 启动构建结果（自动选择 macOS / Windows 可执行文件）
+node scripts/run.mjs
+
 # macOS 应用包（本地 ad-hoc 签名）
 node scripts/build.mjs --package
 open bin/Excaligo.app
@@ -19,6 +22,8 @@ open bin/Excaligo.app
 # macOS DMG；目标文件已存在时不会覆盖
 node scripts/build.mjs --dmg
 ```
+
+Windows 使用同一个构建入口，生成 `bin/excaligo.exe`（GUI 子系统，不弹出控制台窗口），运行需要 Microsoft Edge WebView2 Runtime。`.app` 和 DMG 打包仅用于 macOS；本项目尚未提供 Windows 安装器。
 
 开发模式：
 
@@ -43,12 +48,21 @@ macOS 打包脚本使用 Go **1.26.8**，保持原项目 macOS **12.0** 的最�
 - 关闭、切换文件和目录前的未保存确认；保存失败会保留编辑内容。
 - 递归目录监听，创建新子目录后继续监听，切换目录会关闭旧监听。
 - 原生菜单、最近 10 个目录、浅色 / 深色 / 系统主题、侧边栏开关。
+- 应用外壳中文 / 英文切换，涵盖侧边栏、标签页、设置面板、原生菜单和应用操作提示，不切换 Excalidraw 内部语言。
 - F5 演示模式、激光笔、Escape 退出演示、无边框模式、全屏和窗口控制。
 - `.excalidraw` 文件关联及命令行文件打开。内置字体，离线加载画布。
 
 偏好设置保存在系统配置目录的 `excaligo/preferences.json`，可用 `EXCALIGO_CONFIG_DIR` 指定配置父目录以隔离开发与测试。文件采用与原项目相同的 `preferences` 包装对象及 snake_case 字段；不会自动改写旧应用的配置文件。绘图文件可以直接打开，无需转换。
 
 删除操作与原项目一致：经过界面确认后直接删除，文件夹包含的内容也会删除，不会移入回收站。
+
+## 主题与语言
+
+点击应用内容区右上角的设置按钮，选择亮色、暗色、跟随系统或应用语言。原生菜单也提供 **View → Theme / Language**（中文为 **视图 → 主题 / 语言**）。隐藏侧边栏或窗口边框后，设置按钮仍可用；演示模式下按 Escape 返回。
+
+切换立即生效并保存，重启后恢复。旧配置没有 `language` 字段时默认使用英文，保持原有行为。主题同时应用于外壳和 Excalidraw；语言只应用于外壳，不重建画布、不改写文件名或绘图内容。系统标题栏、系统文件选择器及其内置文案仍由操作系统管理；应用设置的菜单、按钮和消息正文使用所选语言。
+
+Go 与 TypeScript 共享 `internal/localization/locales/en.json` 和 `zh.json`，测试检查翻译键及占位符的一致性。设置写入串行执行，失败时报告错误并撤回失败选择。
 
 ## 包结构
 
@@ -57,6 +71,7 @@ cmd/excaligo/          程序入口
 internal/desktop/     Wails 装配、原生窗口/菜单/对话框、IPC 服务
 internal/drawing/     文档校验、BLAKE3、目录树与受限文件操作
 internal/preferences/ 偏好设置及持久化
+internal/localization/ 外壳共享翻译目录
 internal/watcher/     递归监听和资源生命周期
 internal/storage/     原子文件替换
 frontend/             React 前端、生成的绑定及嵌入资源
@@ -78,7 +93,7 @@ npm --prefix frontend run test:run
 
 Go 测试包括原始样例无损往返、文件操作、JSON 校验、BLAKE3 向量、路径和符号链接越界、并发新建、写入失败、偏好设置兼容与目录监听生命周期。前端测试覆盖保存失败拦截、空画布、并发保存、自动保存、标签缓存、异步读取顺序、另存为和快捷键。
 
-CI 在 macOS 上构建应用包并执行上述检查。macOS 原生界面已进行本地验证；Windows / Linux 尚未完成原生构建及交互验收。macOS 12 的最低版本元数据与编译目标已配置，尚未在 macOS 12 实机上验收。
+CI 配置包含 macOS 和 Windows 构建、测试任务，macOS 应用包以 tar.gz 上传以保留可执行权限。当前本地已通过 Go 竞态测试、前端类型检查、37 项前端测试、macOS 原生构建与主题/语言交互验收，以及 Windows x64 交叉编译。Windows 实机交互、Linux 原生构建、macOS 12 实机尚未验收；构建成功不代表这些实机验证已完成。
 
 ## 来源
 

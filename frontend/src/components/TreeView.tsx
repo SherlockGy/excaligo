@@ -1,3 +1,4 @@
+import { useTranslation } from '../hooks/useTranslation'
 import { useState, useRef, useEffect, memo } from 'react'
 import {
   ChevronDown,
@@ -39,6 +40,7 @@ function isPathInsideDirectory(path: string, directory: string): boolean {
 }
 
 const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, depth }: TreeNodeProps) {
+  const t = useTranslation()
   const [isExpanded, setIsExpanded] = useState(depth === 0)
   const [isRenaming, setIsRenaming] = useState(false)
   const [newName, setNewName] = useState(displayName(node))
@@ -109,9 +111,9 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
     setShowMenu(false)
 
     const fileName = await promptForName({
-      title: 'File name',
-      defaultValue: 'Untitled.excalidraw',
-      confirmLabel: 'Create',
+      title: t('File name'),
+      defaultValue: t('Untitled.excalidraw'),
+      confirmLabel: t('Create'),
     })
     if (!fileName) {
       return
@@ -127,9 +129,9 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
     setShowMenu(false)
 
     const folderName = await promptForName({
-      title: 'Folder name',
-      defaultValue: 'New Folder',
-      confirmLabel: 'Create',
+      title: t('Folder name'),
+      defaultValue: t('New Folder'),
+      confirmLabel: t('Create'),
     })
     if (!folderName) {
       return
@@ -153,12 +155,12 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
     try {
       // Use Wails native dialog API for confirmation
       const confirmed = await ask(
-        `Are you sure you want to delete "${itemName}"?`,
+        t('Are you sure you want to delete "{name}"?', { name: itemName }),
         {
-          title: 'Confirm Deletion',
+          title: t('Confirm Deletion'),
           kind: 'warning',
-          okLabel: 'Delete',
-          cancelLabel: 'Cancel'
+          okLabel: t('Delete'),
+          cancelLabel: t('Cancel')
         }
       )
 
@@ -171,12 +173,12 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
 
         if (hasUnsavedFile || hasUnsavedFolderFile) {
           const discardUnsaved = await ask(
-            `"${itemName}" contains unsaved changes. Delete without saving?`,
+            t('"{name}" contains unsaved changes. Delete without saving?', { name: itemName }),
             {
-              title: 'Unsaved Changes',
+              title: t('Unsaved Changes'),
               kind: 'warning',
-              okLabel: 'Delete Without Saving',
-              cancelLabel: 'Cancel',
+              okLabel: t('Delete Without Saving'),
+              cancelLabel: t('Cancel'),
             }
           )
 
@@ -193,7 +195,7 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
           }
         } catch (error) {
           console.error('Failed to delete item:', error)
-          await message(`Failed to delete item: ${error}`, { title: 'Error', kind: 'error' })
+          await message(t("Failed to delete item: {error}", { error: String(error) }), { title: t('Error'), kind: 'error' })
         }
       }
     } catch (error) {
@@ -280,8 +282,8 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
         <button
           onClick={handleMenuClick}
           className="tree-menu-item opacity-0 group-hover:opacity-100 p-1 rounded transition-opacity"
-          title={node.is_directory ? 'Folder actions' : 'File actions'}
-          aria-label={`${node.is_directory ? 'Folder' : 'File'} actions for ${node.name}`}
+          title={node.is_directory ? t('Folder actions') : t('File actions')}
+          aria-label={t('Actions for {name}', { name: node.name })}
         >
           <MoreVertical className="w-3 h-3" />
         </button>
@@ -304,14 +306,14 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
                 className="tree-menu-item w-full px-3 py-2 text-left text-sm flex items-center gap-2"
               >
                 <FilePlus className="w-3 h-3" />
-                New File
+                {t('New File')}
               </button>
               <button
                 onClick={handleCreateFolder}
                 className="tree-menu-item w-full px-3 py-2 text-left text-sm flex items-center gap-2"
               >
                 <FolderPlus className="w-3 h-3" />
-                New Folder
+                {t('New Folder')}
               </button>
             </>
           )}
@@ -325,7 +327,7 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
             className="tree-menu-item w-full px-3 py-2 text-left text-sm flex items-center gap-2"
           >
             <Edit2 className="w-3 h-3" />
-            Rename
+            {t('Rename')}
           </button>
           <button
             onClick={(e) => {
@@ -334,7 +336,7 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
             className="tree-menu-item tree-menu-danger w-full px-3 py-2 text-left text-sm flex items-center gap-2"
           >
             <Trash2 className="w-3 h-3" />
-            Delete
+            {t('Delete')}
           </button>
         </div>
       )}
@@ -357,10 +359,11 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
 })
 
 export function TreeView({ nodes, onFileClick, activeFilePath }: TreeViewProps) {
+  const t = useTranslation()
   if (nodes.length === 0) {
     return (
       <div className="sidebar-muted text-sm text-center py-8">
-        No .excalidraw files found
+        {t('No .excalidraw files found')}
       </div>
     )
   }

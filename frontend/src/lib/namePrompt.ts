@@ -1,3 +1,4 @@
+import { t } from '../hooks/useTranslation'
 interface NamePromptOptions {
   title: string
   defaultValue: string
@@ -7,7 +8,7 @@ interface NamePromptOptions {
 export function promptForName({
   title,
   defaultValue,
-  confirmLabel = 'Create',
+  confirmLabel = t('Create'),
 }: NamePromptOptions): Promise<string | null> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div')
@@ -15,6 +16,9 @@ export function promptForName({
 
     const dialog = document.createElement('form')
     dialog.className = 'name-prompt-dialog'
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    dialog.setAttribute('aria-label', title)
 
     const label = document.createElement('label')
     label.className = 'name-prompt-label'
@@ -24,6 +28,8 @@ export function promptForName({
     input.className = 'name-prompt-input'
     input.type = 'text'
     input.value = defaultValue
+    input.setAttribute('aria-label', title)
+    const previousFocus = document.activeElement as HTMLElement | null
 
     const actions = document.createElement('div')
     actions.className = 'name-prompt-actions'
@@ -31,7 +37,7 @@ export function promptForName({
     const cancelButton = document.createElement('button')
     cancelButton.className = 'name-prompt-button'
     cancelButton.type = 'button'
-    cancelButton.textContent = 'Cancel'
+    cancelButton.textContent = t('Cancel')
 
     const confirmButton = document.createElement('button')
     confirmButton.className = 'name-prompt-button primary'
@@ -47,12 +53,19 @@ export function promptForName({
       settled = true
       document.removeEventListener('keydown', handleKeyDown)
       overlay.remove()
+      previousFocus?.focus()
       resolve(value)
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault()
         cleanup(null)
+      } else if (event.key === 'Tab') {
+        const controls = [input, cancelButton, confirmButton]
+        const current = controls.findIndex(control => control === document.activeElement)
+        event.preventDefault()
+        controls[(current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length].focus()
       }
     }
 

@@ -1,3 +1,4 @@
+import { useTranslation } from '../hooks/useTranslation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import { useStore } from '../store/useStore'
@@ -18,6 +19,7 @@ interface EditorPaneProps {
 }
 
 function EditorPane({ tab, isActive, presentationMode, theme }: EditorPaneProps) {
+  const t = useTranslation()
   const [isReady, setIsReady] = useState(false)
   const excalidrawAPIRef = useRef<any>(null)
   const initialLoadCompleteRef = useRef(false)
@@ -212,7 +214,7 @@ function EditorPane({ tab, isActive, presentationMode, theme }: EditorPaneProps)
         <div className="editor-loading absolute inset-0 z-20 flex items-center justify-center">
           <div className="flex items-center gap-3">
             <div className="editor-spinner h-5 w-5 animate-spin rounded-full border-2" />
-            <span className="text-sm">Loading canvas...</span>
+            <span className="text-sm">{t('Loading canvas...')}</span>
           </div>
         </div>
       )}
@@ -221,6 +223,7 @@ function EditorPane({ tab, isActive, presentationMode, theme }: EditorPaneProps)
 }
 
 export function ExcalidrawEditor() {
+  const t = useTranslation()
   const activeFile = useStore(state => state.activeFile)
   const openTabs = useStore(state => state.openTabs)
   const presentationMode = useStore(state => state.presentationMode)
@@ -230,8 +233,8 @@ export function ExcalidrawEditor() {
     return (
       <div className="editor-empty fixed inset-0 flex items-center justify-center pointer-events-none">
         <div className="text-center">
-          <p className="text-lg mb-2">No file selected</p>
-          <p className="text-sm">Select a file from the sidebar to start editing</p>
+          <p className="text-lg mb-2">{t('No file selected')}</p>
+          <p className="text-sm">{t('Select a file from the sidebar to start editing')}</p>
         </div>
       </div>
     )
