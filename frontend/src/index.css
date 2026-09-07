@@ -80,6 +80,11 @@ html, body, #root {
   background: var(--app-surface-hover);
 }
 .shell-settings { position: relative; }
+.document-mode-button { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.document-mode-button[data-editing="true"] { color: var(--app-accent-text); background: var(--app-accent-soft); }
+.document-mode-button:disabled { opacity: 0.6; cursor: default; }
+.engine-version { display: flex; justify-content: space-between; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--app-border); }
+.engine-version dd { font-variant-numeric: tabular-nums; user-select: text; }
 .shell-settings summary { list-style: none; }
 .shell-settings summary::-webkit-details-marker { display: none; }
 .shell-settings-panel {

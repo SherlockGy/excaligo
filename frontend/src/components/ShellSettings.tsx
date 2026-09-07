@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useTranslation } from '../hooks/useTranslation'
+import { EXCALIDRAW_VERSION } from '../lib/version'
 
 export function ShellSettings() {
   const t = useTranslation()
@@ -57,6 +58,10 @@ export function ShellSettings() {
           </select>
         </label>
         <p className="sidebar-muted">{t('Editor language is unchanged.')}</p>
+        <dl className="engine-version">
+          <dt>{t('Excalidraw version')}</dt>
+          <dd>{EXCALIDRAW_VERSION}</dd>
+        </dl>
       </section>
     </details>
   )

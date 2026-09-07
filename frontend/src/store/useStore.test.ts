@@ -18,7 +18,7 @@ beforeEach(() => {
 
 function activate(tab: OpenTab, dirty = false) {
   useStore.setState({ currentDirectory: '/workspace', activeFile: tab, openTabs: [{ ...tab, modified: dirty }],
-    fileContent: tab.cachedContent, isDirty: dirty })
+    fileContent: tab.cachedContent, isDirty: dirty, readOnly: false })
 }
 
 describe('saving and unsaved data', () => {

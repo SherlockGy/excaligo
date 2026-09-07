@@ -38,7 +38,12 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
     }
     case 'save': await state.saveCurrentFile(); return
     case 'save_as': {
+      if (state.savingBeforeReadOnly) return
       if (!state.activeFile || !state.fileContent) return
+      if (state.readOnly) {
+        alert(t('Switch to edit mode before saving a drawing.'))
+        return
+      }
       const original = state.activeFile
       const path = await invoke<string | null>('save_file_as', { content: state.fileContent })
       if (!path) return
@@ -60,7 +65,7 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
         return
       }
       useStore.setState(current => ({
-        activeFile: tab, fileContent: saved.content, isDirty: false, activeFileLoadSource: 'disk',
+        activeFile: tab, fileContent: saved.content, isDirty: false, activeFileLoadSource: 'disk', readOnly: true,
         openTabs: [...current.openTabs.filter(item => item.path !== path && item.path !== original.path), tab],
       }))
       state.markFileAsModified(original.path, false)

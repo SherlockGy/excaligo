@@ -80,7 +80,9 @@ export function useAppLifecycle() {
     void openPending().catch(error => console.error(logPrefix, error))
     const timer = setInterval(() => {
       const state = useStore.getState()
-      if (state.isDirty && !closing) void state.saveCurrentFile().catch(error => console.error(logPrefix, error))
+      if (state.isDirty && !state.readOnly && !state.savingBeforeReadOnly && !closing) {
+        void state.saveCurrentFile().catch(error => console.error(logPrefix, error))
+      }
     }, TIMING.AUTO_SAVE_INTERVAL)
     return () => {
       disposed = true

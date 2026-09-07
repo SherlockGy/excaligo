@@ -29,4 +29,4 @@
 - 测试使用独立临时配置与样例副本；切换和重启后样例副本与原文件逐字节一致。
 - macOS `.app` 构建和本地签名通过；Windows x64 生产可执行文件交叉编译通过。
 
-Windows 原生交互尚未在本机验证。CI 的配置不能代替执行结果，后续以 GitHub Actions 的实际运行状态为准。
+主题/语言功能提交 `e77a79b780cfcb6182280769c7f0945d76012550` 已推送。首轮 Windows 构建通过，但 PowerShell 将未加引号的覆盖率参数拆开；修复提交 `e91c5a1a6eb44170037ce5d4c4b12beaf9e7640e` 后，[macOS 和 Windows CI](https://github.com/SherlockGy/excaligo/actions/runs/34152860251) 均通过。Windows 原生交互仍未在本机验证。

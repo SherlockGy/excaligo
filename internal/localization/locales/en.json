@@ -29,7 +29,7 @@
   "{count} file": "{count} file",
   "{count} files": "{count} files",
   "No file selected": "No file selected",
-  "Select a file from the sidebar to start editing": "Select a file from the sidebar to start editing",
+  "Select a file from the sidebar to view": "Select a file from the sidebar to view",
   "Loading canvas...": "Loading canvas...",
   "Close tab": "Close tab",
   "Close {name}": "Close {name}",
@@ -113,5 +113,12 @@
   "Editing shortcuts are handled by Excalidraw.": "Editing shortcuts are handled by Excalidraw.",
   "Exit presentation: Escape": "Exit presentation: Escape",
   "Switch Tabs: Cmd/Ctrl+Tab / Cmd/Ctrl+Shift+Tab": "Switch Tabs: Cmd/Ctrl+Tab / Cmd/Ctrl+Shift+Tab",
-  "Native system controls follow the OS appearance and language.": "Native system controls follow the OS appearance and language."
+  "Native system controls follow the OS appearance and language.": "Native system controls follow the OS appearance and language.",
+  "Read-only": "Read-only",
+  "Editing": "Editing",
+  "Saving...": "Saving...",
+  "Switch to edit mode": "Switch to edit mode",
+  "Save and switch to read-only": "Save and switch to read-only",
+  "Switch to edit mode before saving a drawing.": "Switch to edit mode before saving a drawing.",
+  "Excalidraw version": "Excalidraw version"
 }

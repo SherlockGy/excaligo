@@ -1,27 +1,28 @@
 import { useTranslation } from '../hooks/useTranslation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Excalidraw } from '@excalidraw/excalidraw'
+import type { AppState as ExcalidrawAppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawProps } from '@excalidraw/excalidraw/types'
 import { useStore } from '../store/useStore'
 import { setGlobalExcalidrawAPI } from '../hooks/useMenuHandler'
 import { TIMING } from '../constants'
 import type { OpenTab } from '../types'
 import { useTheme } from '../hooks/useTheme'
-import { sceneFingerprint } from '../lib/scene'
+import { sceneFingerprint, serializeScene } from '../lib/scene'
 
-type ExcalidrawElement = any
-type ExcalidrawAppState = any
+type ExcalidrawElement = Parameters<NonNullable<ExcalidrawProps['onChange']>>[0][number]
 
 interface EditorPaneProps {
   tab: OpenTab
   isActive: boolean
   presentationMode: boolean
+  readOnly: boolean
   theme: 'light' | 'dark'
 }
 
-function EditorPane({ tab, isActive, presentationMode, theme }: EditorPaneProps) {
+function EditorPane({ tab, isActive, presentationMode, readOnly, theme }: EditorPaneProps) {
   const t = useTranslation()
   const [isReady, setIsReady] = useState(false)
-  const excalidrawAPIRef = useRef<any>(null)
+  const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null)
   const initialLoadCompleteRef = useRef(false)
   const isUserChangeRef = useRef(false)
   const lastSavedElementsRef = useRef(sceneFingerprint(tab.cachedScene))
@@ -127,10 +128,11 @@ function EditorPane({ tab, isActive, presentationMode, theme }: EditorPaneProps)
   const handleChange = useCallback((
     elements: readonly ExcalidrawElement[],
     appState: ExcalidrawAppState,
-    files: any
+    files: BinaryFiles
   ) => {
     const store = useStore.getState()
-    if (!isActive || !isUserChangeRef.current || !initialLoadCompleteRef.current) {
+    if (!isActive || store.activeFile?.path !== tab.path || store.readOnly || store.presentationMode ||
+      !isUserChangeRef.current || !initialLoadCompleteRef.current) {
       lastSavedElementsRef.current = sceneFingerprint({ elements, appState, files })
       return
     }
@@ -151,30 +153,7 @@ function EditorPane({ tab, isActive, presentationMode, theme }: EditorPaneProps)
       store.markTreeNodeAsModified(tab.path, true)
     }
 
-    const newContent = JSON.stringify(
-      {
-        type: 'excalidraw',
-        version: 2,
-        source: 'ExcaliApp',
-        elements,
-        appState: {
-          gridSize: appState.gridSize,
-          viewBackgroundColor: appState.viewBackgroundColor,
-          currentItemFontFamily: appState.currentItemFontFamily,
-          currentItemFontSize: appState.currentItemFontSize,
-          currentItemStrokeColor: appState.currentItemStrokeColor,
-          currentItemBackgroundColor: appState.currentItemBackgroundColor,
-          currentItemFillStyle: appState.currentItemFillStyle,
-          currentItemStrokeWidth: appState.currentItemStrokeWidth,
-          currentItemRoughness: appState.currentItemRoughness,
-          currentItemOpacity: appState.currentItemOpacity,
-          currentItemTextAlign: appState.currentItemTextAlign,
-        },
-        files,
-      },
-      null,
-      2
-    )
+    const newContent = serializeScene(store.fileContent || tab.cachedContent, { elements, appState, files })
 
     const freshStore = useStore.getState()
     if (freshStore.activeFile?.path === tab.path) {
@@ -198,7 +177,7 @@ function EditorPane({ tab, isActive, presentationMode, theme }: EditorPaneProps)
         }}
         onChange={handleChange}
         theme={theme}
-        viewModeEnabled={presentationMode}
+        viewModeEnabled={!isActive || readOnly || presentationMode}
         UIOptions={{
           canvasActions: {
             loadScene: false,
@@ -227,6 +206,7 @@ export function ExcalidrawEditor() {
   const activeFile = useStore(state => state.activeFile)
   const openTabs = useStore(state => state.openTabs)
   const presentationMode = useStore(state => state.presentationMode)
+  const readOnly = useStore(state => state.readOnly || state.savingBeforeReadOnly)
   const theme = useTheme()
 
   if (!activeFile) {
@@ -234,7 +214,7 @@ export function ExcalidrawEditor() {
       <div className="editor-empty fixed inset-0 flex items-center justify-center pointer-events-none">
         <div className="text-center">
           <p className="text-lg mb-2">{t('No file selected')}</p>
-          <p className="text-sm">{t('Select a file from the sidebar to start editing')}</p>
+          <p className="text-sm">{t('Select a file from the sidebar to view')}</p>
         </div>
       </div>
     )
@@ -248,6 +228,7 @@ export function ExcalidrawEditor() {
           tab={tab}
           isActive={activeFile.path === tab.path}
           presentationMode={presentationMode}
+          readOnly={readOnly}
           theme={theme}
         />
       ))}

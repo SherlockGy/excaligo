@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { useTheme } from '../hooks/useTheme'
 import { useStore } from '../store/useStore'
 import { mockInvoke } from '../test/setup'
+import installed from '../../node_modules/@excalidraw/excalidraw/package.json'
 
 const initial = useStore.getState()
 beforeEach(() => {
@@ -67,4 +68,11 @@ it('restores saved language and theme at startup', async () => {
   fireEvent.click(screen.getByTitle('设置'))
   expect(screen.getByLabelText('应用语言')).toHaveValue('zh')
   expect(screen.getByRole('button', { name: '暗色' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+it('shows the actual installed Excalidraw version, rather than an independently maintained label', () => {
+  render(<ShellSettings />)
+  fireEvent.click(screen.getByTitle('Settings'))
+  expect(screen.getByText('Excalidraw version')).toBeVisible()
+  expect(screen.getByText(installed.version)).toBeVisible()
 })

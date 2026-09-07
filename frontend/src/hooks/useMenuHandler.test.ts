@@ -9,7 +9,7 @@ beforeEach(() => {
   useStore.setState(initial, true)
   const tab = { name: 'original.excalidraw', path: '/work/original.excalidraw', modified: true,
     cachedContent: content, contentHash: 'old', sceneVersion: 0, cachedScene: JSON.parse(content) }
-  useStore.setState({ activeFile: tab, fileContent: content, openTabs: [tab], isDirty: true })
+  useStore.setState({ activeFile: tab, fileContent: content, openTabs: [tab], isDirty: true, readOnly: false })
 })
 
 it('save-as replaces the original tab with a clean, fully populated tab', async () => {
@@ -25,6 +25,14 @@ it('save-as cancellation preserves the original dirty tab', async () => {
   await executeMenuCommand('save_as')
   expect(useStore.getState().activeFile?.path).toBe('/work/original.excalidraw')
   expect(useStore.getState().isDirty).toBe(true)
+})
+
+it('blocks manual save and save-as in read-only mode', async () => {
+  useStore.setState({ readOnly: true })
+  await executeMenuCommand('save')
+  await executeMenuCommand('save_as')
+  expect(mockInvoke).not.toHaveBeenCalled()
+  expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Switch to edit mode'))
 })
 
 it('preserves edits made while the save-as dialog is open', async () => {

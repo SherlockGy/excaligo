@@ -10,6 +10,7 @@ import { useTheme } from './hooks/useTheme'
 import { useEffect } from 'react'
 import { PanelLeft } from 'lucide-react'
 import { ShellSettings } from './components/ShellSettings'
+import { DocumentModeButton } from './components/DocumentModeButton'
 import { useTranslation } from './hooks/useTranslation'
 import './index.css'
 
@@ -33,6 +34,7 @@ function App() {
               <PanelLeft size={16} aria-hidden="true" />
             </button>
             <div className="shell-tabs"><TabBar /></div>
+            <DocumentModeButton />
             <ShellSettings />
           </div>
         )}

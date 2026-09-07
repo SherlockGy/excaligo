@@ -28,7 +28,7 @@ it('retains save-as tabs outside the watched workspace while removing deleted lo
 it('autosaves dirty content after 30 seconds and cleans up the timer', async () => {
   vi.useFakeTimers()
   const save = vi.fn().mockResolvedValue(undefined)
-  useStore.setState({ isDirty: true, saveCurrentFile: save })
+  useStore.setState({ isDirty: true, saveCurrentFile: save, readOnly: false })
   const { unmount } = renderHook(useAppLifecycle)
   await act(async () => { await vi.advanceTimersByTimeAsync(29999) })
   expect(save).not.toHaveBeenCalled()
@@ -48,5 +48,17 @@ it('does not force quit after a failed save and releases the close guard', async
   await act(async () => { await callback({ payload: null }) })
   expect(mockInvoke).not.toHaveBeenCalledWith('force_close_app')
   expect(mockInvoke).toHaveBeenCalledWith('cancel_close')
+  unmount()
+})
+
+it('does not autosave in read-only mode or during the save-to-read-only transition', async () => {
+  vi.useFakeTimers()
+  const save = vi.fn()
+  useStore.setState({ isDirty: true, saveCurrentFile: save, readOnly: true })
+  const { unmount } = renderHook(useAppLifecycle)
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+  useStore.setState({ readOnly: false, savingBeforeReadOnly: true })
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+  expect(save).not.toHaveBeenCalled()
   unmount()
 })

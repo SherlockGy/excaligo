@@ -127,6 +127,8 @@ interface AppStore {
   preferences: Preferences
   sidebarVisible: boolean
   isDirty: boolean
+  readOnly: boolean
+  savingBeforeReadOnly: boolean
   presentationMode: boolean
   openTabs: OpenTab[]
 
@@ -152,6 +154,7 @@ interface AppStore {
   loadFile: (file: ExcalidrawFile) => Promise<void>
   loadFileFromTree: (node: FileTreeNode) => Promise<void>
   saveCurrentFile: (content?: string) => Promise<void>
+  toggleReadOnly: () => Promise<void>
   createNewFile: (fileName?: string, directory?: string) => Promise<void>
   createNewFolder: (folderName?: string, directory?: string) => Promise<void>
   renameFile: (oldPath: string, newName: string) => Promise<void>
@@ -182,6 +185,8 @@ export const useStore = create<AppStore>((set, get) => ({
   },
   sidebarVisible: true,
   isDirty: false,
+  readOnly: true,
+  savingBeforeReadOnly: false,
   presentationMode: false,
   openTabs: [],
 
@@ -189,7 +194,8 @@ export const useStore = create<AppStore>((set, get) => ({
   setCurrentDirectory: (dir) => set({ currentDirectory: dir }),
   setFiles: (files) => set({ files }),
   setFileTree: (tree) => set({ fileTree: tree }),
-  setActiveFile: (file) => set({ activeFile: file }),
+  setActiveFile: (file) => set(state => ({ activeFile: file,
+    readOnly: state.activeFile?.path === file?.path ? state.readOnly : true })),
   setFileContent: (content) => set((state) => ({
     fileContent: content,
     openTabs:
@@ -241,6 +247,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Load directory and list files
   loadDirectory: async (dir) => {
+    if (get().savingBeforeReadOnly) return false
     const logPrefix = `[loadDirectory 加载工作目录][directory=${dir}]`
     const generation = ++directoryLoadGeneration
     fileLoadGeneration++
@@ -277,6 +284,7 @@ export const useStore = create<AppStore>((set, get) => ({
         files,
         fileTree,
         activeFile: null,
+        readOnly: true,
         fileContent: null,
         activeFileLoadSource: null,
         isDirty: false,
@@ -334,6 +342,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Load file content
   loadFile: async (file) => {
+    if (get().savingBeforeReadOnly) return
     const state = get()
 
     // If clicking the same file that's already active, do nothing
@@ -395,6 +404,7 @@ export const useStore = create<AppStore>((set, get) => ({
             fileContent: existingTab.cachedContent,
             activeFileLoadSource: 'cache',
             isDirty: existingTab.modified,
+            readOnly: !existingTab.modified,
           })
           return
         }
@@ -412,6 +422,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
       set({
         activeFile: updatedFile,
+        readOnly: true,
         fileContent: updatedTab.cachedContent,
         activeFileLoadSource: 'disk',
         isDirty: false,
@@ -462,6 +473,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // Save current file
   saveCurrentFile: async (content) => {
     const state = get()
+    if (state.readOnly) return
     const { activeFile, fileContent, isDirty } = state
 
     const pending = activeFile && savingFiles.get(activeFile.path)
@@ -532,8 +544,37 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
+  // Application-level policy. Excalidraw stays an unmodified dependency.
+  toggleReadOnly: async () => {
+    const state = get()
+    if (!state.activeFile || state.savingBeforeReadOnly) return
+    if (state.readOnly) {
+      set({ readOnly: false })
+      return
+    }
+    const path = state.activeFile.path
+    const logPrefix = `[toggleReadOnly 保存后只读][filePath=${path}]`
+    set({ savingBeforeReadOnly: true })
+    try {
+      // Let React apply view mode and finish blur callbacks before saving.
+      // Continue accepting final onChange events until the write succeeds.
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
+      do {
+        if (get().activeFile?.path !== path) return
+        await get().saveCurrentFile()
+      } while (get().activeFile?.path === path && get().isDirty)
+      if (get().activeFile?.path === path) set({ readOnly: true })
+    } catch (error) {
+      // saveCurrentFile already reports the error; retain editable dirty data.
+      console.error(logPrefix, error)
+    } finally {
+      set({ savingBeforeReadOnly: false })
+    }
+  },
+
   // Create new file
   createNewFile: async (fileName, directory) => {
+    if (get().savingBeforeReadOnly) return
     const state = get()
     let { currentDirectory } = state
 
@@ -666,6 +707,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Rename file
   renameFile: async (oldPath, newName) => {
+    if (get().savingBeforeReadOnly) return
     try {
       // Ensure the new name has .excalidraw extension
       const finalName = newName.endsWith('.excalidraw')
@@ -703,6 +745,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Rename folder
   renameFolder: async (oldPath, newName) => {
+    if (get().savingBeforeReadOnly) return
     try {
       const newPath = await invoke<string>('rename_folder', {
         oldPath,
@@ -748,6 +791,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // Delete file
   // NOTE: Confirmation should be handled by the caller
   deleteFile: async (filePath) => {
+    if (get().savingBeforeReadOnly) return false
     try {
       await invoke('delete_file', { filePath })
       const state = get()
@@ -779,6 +823,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // Delete folder
   // NOTE: Confirmation should be handled by the caller
   deleteFolder: async (folderPath) => {
+    if (get().savingBeforeReadOnly) return false
     try {
       await invoke('delete_folder', { folderPath })
       const state = get()
@@ -956,6 +1001,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Close tab
   closeTab: async (filePath) => {
+    if (get().savingBeforeReadOnly) return
     const state = get()
     const tabIndex = state.openTabs.findIndex(t => t.path === filePath)
     if (tabIndex === -1) return
