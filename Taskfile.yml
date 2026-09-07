@@ -1,0 +1,29 @@
+version: '3'
+
+tasks:
+  build:
+    cmds:
+      - node scripts/build.mjs
+  package:
+    cmds:
+      - node scripts/build.mjs --package
+  dmg:
+    cmds:
+      - node scripts/build.mjs --dmg
+  dev:
+    cmds:
+      - wails3 dev -config build/config.yml -port 9245
+  bindings:
+    cmds:
+      - wails3 generate bindings -ts -i ./cmd/excaligo
+  frontend:dev:
+    dir: frontend
+    cmds:
+      - npm run dev
+  test:
+    cmds:
+      - go test -race ./...
+      - npm --prefix frontend run test:run
+  run:
+    cmds:
+      - ./bin/excaligo

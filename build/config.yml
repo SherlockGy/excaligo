@@ -1,0 +1,33 @@
+version: '3'
+info:
+  companyName: SherlockGy
+  productName: Excaligo
+  productIdentifier: com.sherlockgy.excaligo
+  description: A local-first Excalidraw desktop editor
+  version: 0.1.0
+dev_mode:
+  root_path: .
+  log_level: info
+  debounce: 500
+  ignore:
+    dir: [.git, node_modules, frontend, bin]
+    file: [.DS_Store, .gitignore]
+    watched_extension: ['*.go']
+    git_ignore: true
+  executes:
+    - cmd: npm --prefix frontend ci --no-audit --no-fund
+      type: once
+    - cmd: wails3 task frontend:dev
+      type: background
+    - cmd: wails3 generate bindings -ts -i ./cmd/excaligo
+      type: blocking
+    - cmd: go build -o bin/excaligo ./cmd/excaligo
+      type: blocking
+    - cmd: ./bin/excaligo
+      type: primary
+fileAssociations:
+  - ext: excalidraw
+    name: Excalidraw Drawing
+    description: Excalidraw drawing
+    role: Editor
+    mimeType: application/vnd.excalidraw+json

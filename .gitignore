@@ -1,0 +1,11 @@
+/bin/
+/frontend/node_modules/
+/frontend/public/fonts/
+/frontend/dist/*
+!/frontend/dist/.gitkeep
+/.tools/
+/.task/
+/coverage.out
+/frontend/coverage/
+*.log
+.DS_Store

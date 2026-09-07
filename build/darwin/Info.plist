@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleName</key><string>Excaligo</string>
+  <key>CFBundleDisplayName</key><string>Excaligo</string>
+  <key>CFBundleExecutable</key><string>excaligo</string>
+  <key>CFBundleIdentifier</key><string>com.sherlockgy.excaligo</string>
+  <key>CFBundleVersion</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleIconFile</key><string>icon</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>CFBundleDocumentTypes</key><array><dict>
+    <key>CFBundleTypeName</key><string>Excalidraw Drawing</string>
+    <key>CFBundleTypeRole</key><string>Editor</string>
+    <key>LSHandlerRank</key><string>Alternate</string>
+    <key>LSItemContentTypes</key><array><string>com.sherlockgy.excaligo.excalidraw</string></array>
+    <key>CFBundleTypeExtensions</key><array><string>excalidraw</string></array>
+  </dict></array>
+  <key>UTExportedTypeDeclarations</key><array><dict>
+    <key>UTTypeIdentifier</key><string>com.sherlockgy.excaligo.excalidraw</string>
+    <key>UTTypeDescription</key><string>Excalidraw Drawing</string>
+    <key>UTTypeConformsTo</key><array><string>public.json</string></array>
+    <key>UTTypeTagSpecification</key><dict>
+      <key>public.filename-extension</key><array><string>excalidraw</string></array>
+      <key>public.mime-type</key><string>application/vnd.excalidraw+json</string>
+    </dict>
+  </dict></array>
+</dict></plist>
