@@ -120,5 +120,10 @@
   "Switch to edit mode": "切换为编辑模式",
   "Save and switch to read-only": "保存并切换为只读",
   "Switch to edit mode before saving a drawing.": "请先切换为编辑模式，再保存绘图文件。",
-  "Excalidraw version": "Excalidraw 版本"
+  "Excalidraw version": "Excalidraw 版本",
+  "A file with this name is already open.": "目标位置已有同名文件的标签页，请先处理该标签页。",
+  "Failed to move file: {error}": "移动文件失败：{error}",
+  "Drop files here to move to the workspace root": "将文件拖到此处以移回工作目录根层级",
+  "Moving file...": "正在移动文件…",
+  "Drop onto a folder or the workspace name to move.": "拖到文件夹或顶部工作目录名称上以移动文件。"
 }

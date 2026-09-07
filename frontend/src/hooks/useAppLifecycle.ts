@@ -32,11 +32,12 @@ export function useAppLifecycle() {
       try {
         do {
           refreshAgain = false
+          if (useStore.getState().movingFilePath) return
           const directory = useStore.getState().currentDirectory
           if (!directory) return
           await useStore.getState().loadFileTree(directory)
           const state = useStore.getState()
-          if (state.currentDirectory !== directory) return
+          if (state.currentDirectory !== directory || state.movingFilePath) return
           const paths = new Set(state.files.map(file => file.path))
           // An external deletion must not discard an unsaved canvas.
           const missingInWorkspace = (path: string) =>
@@ -56,6 +57,7 @@ export function useAppLifecycle() {
       closing = true
       try {
         const state = useStore.getState()
+        if (state.movingFilePath) return
         if (state.isDirty) {
           const save = await ask(t('Do you want to save your changes before closing?'), {
             title: t('Unsaved Changes'), kind: 'warning', okLabel: t('Save & Close'), cancelLabel: t("Don't Save"),
@@ -77,16 +79,22 @@ export function useAppLifecycle() {
       listen('check-unsaved-before-close', close),
       listen('open-files', openPending),
     ]
+    const unsubscribe = useStore.subscribe((state, previous) => {
+      if (previous.movingFilePath && !state.movingFilePath && !disposed) {
+        void refresh().catch(error => console.error(logPrefix, error))
+      }
+    })
     void openPending().catch(error => console.error(logPrefix, error))
     const timer = setInterval(() => {
       const state = useStore.getState()
-      if (state.isDirty && !state.readOnly && !state.savingBeforeReadOnly && !closing) {
+      if (state.isDirty && !state.readOnly && !state.savingBeforeReadOnly && !state.movingFilePath && !closing) {
         void state.saveCurrentFile().catch(error => console.error(logPrefix, error))
       }
     }, TIMING.AUTO_SAVE_INTERVAL)
     return () => {
       disposed = true
       clearInterval(timer)
+      unsubscribe()
       for (const listener of listeners) void listener.then(off => off())
     }
   }, [])

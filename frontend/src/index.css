@@ -201,6 +201,49 @@ html, body, #root {
   color: var(--app-accent-text);
 }
 
+.tree-node-label {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+}
+
+.sidebar-panel .file-drop-target {
+  background: var(--app-accent-soft);
+  color: var(--app-accent-text);
+  box-shadow: inset 0 0 0 2px var(--app-accent);
+}
+
+.file-drop-root {
+  box-shadow: inset 0 0 0 1px var(--app-accent);
+}
+
+.file-dragging {
+  opacity: 0.5;
+}
+
+.tree-node[data-file-draggable="true"] {
+  cursor: grab;
+  touch-action: none;
+}
+
+.file-drag-preview {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 10px;
+  font-size: 14px;
+  border: 1px solid var(--app-accent);
+  border-radius: 6px;
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+
 .tree-icon {
   color: var(--app-text-muted);
 }
@@ -301,6 +344,11 @@ html, body, #root {
 }
 
 .modified-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
   background: var(--app-modified);
 }
 

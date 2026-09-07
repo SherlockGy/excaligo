@@ -2,6 +2,7 @@ import { useTranslation } from '../hooks/useTranslation'
 import { X } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { cn } from '../lib/utils'
+import { UnsavedIndicator } from './UnsavedIndicator'
 
 export function TabBar() {
   const t = useTranslation()
@@ -36,9 +37,7 @@ export function TabBar() {
             <span className="truncate">
               {tab.name.replace('.excalidraw', '')}
             </span>
-            {isModified && (
-              <span className="modified-dot w-2 h-2 rounded-full shrink-0" />
-            )}
+            {isModified && <UnsavedIndicator />}
             {!presentationMode && (
               <button
                 className="tab-close opacity-0 group-hover:opacity-100 p-0.5 rounded shrink-0 transition-opacity"

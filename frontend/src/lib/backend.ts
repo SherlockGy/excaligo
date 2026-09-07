@@ -18,6 +18,7 @@ const commands = {
   create_new_folder: (p: { directory: string; folderName: string }) => Service.CreateNewFolder(p.directory, p.folderName),
   rename_file: (p: { oldPath: string; newName: string }) => Service.RenameFile(p.oldPath, p.newName),
   rename_folder: (p: { oldPath: string; newName: string }) => Service.RenameFolder(p.oldPath, p.newName),
+  move_file: (p: { filePath: string; directory: string }) => Service.MoveFile(p.filePath, p.directory),
   delete_file: (p: { filePath: string }) => Service.DeleteFile(p.filePath),
   delete_folder: (p: { folderPath: string }) => Service.DeleteFolder(p.folderPath),
   get_preferences: () => Service.GetPreferences(),

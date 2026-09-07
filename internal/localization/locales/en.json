@@ -120,5 +120,10 @@
   "Switch to edit mode": "Switch to edit mode",
   "Save and switch to read-only": "Save and switch to read-only",
   "Switch to edit mode before saving a drawing.": "Switch to edit mode before saving a drawing.",
-  "Excalidraw version": "Excalidraw version"
+  "Excalidraw version": "Excalidraw version",
+  "A file with this name is already open.": "A file with this name is already open.",
+  "Failed to move file: {error}": "Failed to move file: {error}",
+  "Drop files here to move to the workspace root": "Drop files here to move to the workspace root",
+  "Moving file...": "Moving file...",
+  "Drop onto a folder or the workspace name to move.": "Drop onto a folder or the workspace name to move."
 }

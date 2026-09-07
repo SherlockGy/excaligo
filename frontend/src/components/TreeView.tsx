@@ -17,11 +17,14 @@ import { FileTreeNode } from '../types'
 import { useStore } from '../store/useStore'
 import { ask, message } from '../lib/backend'
 import { promptForName } from '../lib/namePrompt'
+import { UnsavedIndicator } from './UnsavedIndicator'
 
 interface TreeViewProps {
   nodes: FileTreeNode[]
   onFileClick: (node: FileTreeNode) => void
   activeFilePath?: string
+  dropTargetPath?: string | null
+  draggedFilePath?: string | null
 }
 
 interface TreeNodeProps {
@@ -29,6 +32,8 @@ interface TreeNodeProps {
   onFileClick: (node: FileTreeNode) => void
   activeFilePath?: string
   depth: number
+  dropTargetPath?: string | null
+  draggedFilePath?: string | null
 }
 
 function displayName(node: FileTreeNode): string {
@@ -39,7 +44,7 @@ function isPathInsideDirectory(path: string, directory: string): boolean {
   return path === directory || path.startsWith(`${directory}/`) || path.startsWith(`${directory}\\`)
 }
 
-const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, depth }: TreeNodeProps) {
+const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, depth, dropTargetPath, draggedFilePath }: TreeNodeProps) {
   const t = useTranslation()
   const [isExpanded, setIsExpanded] = useState(depth === 0)
   const [isRenaming, setIsRenaming] = useState(false)
@@ -57,7 +62,16 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
     activeFile,
     isDirty,
     openTabs,
+    movingFilePath,
+    savingBeforeReadOnly,
   } = useStore()
+
+  useEffect(() => {
+    if (node.is_directory && dropTargetPath === node.path && !isExpanded) {
+      const timer = setTimeout(() => setIsExpanded(true), 600)
+      return () => clearTimeout(timer)
+    }
+  }, [node.is_directory, node.path, dropTargetPath, isExpanded])
 
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {
@@ -220,10 +234,15 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
     <div className="relative">
       <div
         className={cn(
-          'tree-node w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors group relative',
+          'tree-node w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors group relative select-none',
           isActive && 'active',
-          node.modified && 'font-semibold'
+          node.is_directory && dropTargetPath === node.path && 'file-drop-target',
+          draggedFilePath === node.path && 'file-dragging'
         )}
+        draggable={false}
+        data-file-draggable={!node.is_directory && !isRenaming && !movingFilePath && !savingBeforeReadOnly ? 'true' : undefined}
+        data-file-path={!node.is_directory ? node.path : undefined}
+        data-drop-directory={node.is_directory ? node.path : undefined}
         style={{ paddingLeft: `${8 + depth * 20}px` }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
@@ -250,47 +269,42 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
           <File className="tree-icon w-4 h-4 flex-shrink-0" />
         )}
 
-        {isRenaming ? (
-          <input
-            ref={renameInputRef}
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onBlur={handleRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleRename()
-              } else if (e.key === 'Escape') {
-                cancelRenameRef.current = true
-                setNewName(displayName(node))
-                setIsRenaming(false)
-              }
-            }}
-            className="tree-input flex-1 text-sm px-1 py-0 border rounded outline-none"
-            onClick={(e) => e.stopPropagation()}
-          />
-        ) : (
-          <span className="text-sm truncate flex-1">
-            {displayName(node)}
-          </span>
-        )}
-
-        {node.modified && (
-          <span className="modified-dot w-2 h-2 rounded-full flex-shrink-0" />
-        )}
+        <div className="tree-node-label">
+          {node.modified && <UnsavedIndicator />}
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onBlur={handleRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleRename()
+                } else if (e.key === 'Escape') {
+                  cancelRenameRef.current = true
+                  setNewName(displayName(node))
+                  setIsRenaming(false)
+                }
+              }}
+              className="tree-input min-w-0 flex-1 text-sm px-1 py-0 border rounded outline-none"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span className="tree-node-name text-sm truncate min-w-0" title={node.name}>
+              {displayName(node)}
+            </span>
+          )}
+        </div>
 
         <button
           onClick={handleMenuClick}
-          className="tree-menu-item opacity-0 group-hover:opacity-100 p-1 rounded transition-opacity"
+          className="tree-menu-item shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 p-1 rounded transition-opacity"
           title={node.is_directory ? t('Folder actions') : t('File actions')}
           aria-label={t('Actions for {name}', { name: node.name })}
         >
           <MoreVertical className="w-3 h-3" />
         </button>
-
-        {isActive && !node.is_directory && (
-          <ChevronRight className="w-4 h-4 flex-shrink-0" />
-        )}
       </div>
 
       {/* Context Menu */}
@@ -350,6 +364,8 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
               onFileClick={onFileClick}
               activeFilePath={activeFilePath}
               depth={depth + 1}
+              dropTargetPath={dropTargetPath}
+              draggedFilePath={draggedFilePath}
             />
           ))}
         </div>
@@ -358,7 +374,7 @@ const TreeNode = memo(function TreeNode({ node, onFileClick, activeFilePath, dep
   )
 })
 
-export function TreeView({ nodes, onFileClick, activeFilePath }: TreeViewProps) {
+export function TreeView({ nodes, onFileClick, activeFilePath, dropTargetPath, draggedFilePath }: TreeViewProps) {
   const t = useTranslation()
   if (nodes.length === 0) {
     return (
@@ -377,6 +393,8 @@ export function TreeView({ nodes, onFileClick, activeFilePath }: TreeViewProps) 
           onFileClick={onFileClick}
           activeFilePath={activeFilePath}
           depth={0}
+          dropTargetPath={dropTargetPath}
+          draggedFilePath={draggedFilePath}
         />
       ))}
     </div>

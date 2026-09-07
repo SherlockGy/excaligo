@@ -38,7 +38,7 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
     }
     case 'save': await state.saveCurrentFile(); return
     case 'save_as': {
-      if (state.savingBeforeReadOnly) return
+      if (state.savingBeforeReadOnly || state.movingFilePath) return
       if (!state.activeFile || !state.fileContent) return
       if (state.readOnly) {
         alert(t('Switch to edit mode before saving a drawing.'))

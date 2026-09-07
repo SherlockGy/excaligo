@@ -72,6 +72,10 @@ export function Message(message: string, options: $models.DialogOptions): $Cance
     return $Call.ByID(1204887341, message, options);
 }
 
+export function MoveFile(filePath: string, directory: string): $CancellablePromise<string> {
+    return $Call.ByID(1660917493, filePath, directory);
+}
+
 export function PendingOpenFiles(): $CancellablePromise<string[] | null> {
     return $Call.ByID(1278972440);
 }

@@ -84,6 +84,9 @@ func (s *Service) RenameFile(oldPath, newName string) (string, error) {
 func (s *Service) RenameFolder(oldPath, newName string) (string, error) {
 	return s.files.RenameFolder(oldPath, newName)
 }
+func (s *Service) MoveFile(filePath, directory string) (string, error) {
+	return s.files.MoveFile(filePath, directory)
+}
 func (s *Service) DeleteFile(filePath string) error     { return s.files.DeleteFile(filePath) }
 func (s *Service) DeleteFolder(folderPath string) error { return s.files.DeleteFolder(folderPath) }
 

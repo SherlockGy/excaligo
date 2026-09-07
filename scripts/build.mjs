@@ -2,9 +2,11 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { releaseVersion } from './release-config.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const logPrefix = '[build 构建桌面应用][app=excaligo]'
+const appVersion = releaseVersion().split('-')[0]
 const args = new Set(process.argv.slice(2))
 const version = readFileSync(join(root, 'go.mod'), 'utf8').match(/github\.com\/wailsapp\/wails\/v3\s+(\S+)/)[1]
 const frontend = join(root, 'frontend')
@@ -41,6 +43,8 @@ if (args.has('--package') || args.has('--dmg')) {
   mkdirSync(join(bundle, 'Resources'), { recursive: true })
   cpSync(join(root, 'bin', binary), join(bundle, 'MacOS', 'excaligo'))
   cpSync(join(root, 'build', 'darwin', 'Info.plist'), join(bundle, 'Info.plist'))
+  run('/usr/libexec/PlistBuddy', ['-c', `Set :CFBundleShortVersionString ${appVersion}`, join(bundle, 'Info.plist')])
+  run('/usr/libexec/PlistBuddy', ['-c', `Set :CFBundleVersion ${appVersion}`, join(bundle, 'Info.plist')])
   cpSync(join(root, 'build', 'icons', 'icon.icns'), join(bundle, 'Resources', 'icon.icns'))
   run('codesign', ['--force', '--sign', '-', join(root, 'bin', 'Excaligo.app')])
   if (args.has('--dmg')) {

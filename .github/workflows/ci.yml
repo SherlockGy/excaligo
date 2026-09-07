@@ -1,11 +1,19 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
 jobs:
   verify:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, macos-15-intel, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -25,11 +33,10 @@ jobs:
       - run: go vet ./...
       - run: go test -race '-coverprofile=coverage.out' ./...
       - run: npm --prefix frontend run test:run
-      - if: runner.os == 'macOS'
-        run: tar -czf bin/Excaligo-macos.tar.gz -C bin Excaligo.app
+      - run: node --test scripts/release-config.test.mjs
+      - run: node scripts/package-release.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: excaligo-${{ runner.os }}
-          path: |
-            bin/Excaligo-macos.tar.gz
-            bin/excaligo.exe
+          name: excaligo-${{ matrix.os }}
+          path: bin/release/*
+          if-no-files-found: error

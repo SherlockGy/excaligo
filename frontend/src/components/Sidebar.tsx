@@ -6,6 +6,8 @@ import { TreeView } from './TreeView'
 import { FileTreeNode } from '../types'
 import { invoke } from '../lib/backend'
 import { promptForName } from '../lib/namePrompt'
+import { useSidebarFileDrag } from '../hooks/useSidebarFileDrag'
+import { cn } from '../lib/utils'
 
 function countFilesInTree(nodes: FileTreeNode[]): number {
   let count = 0
@@ -29,7 +31,10 @@ export function Sidebar() {
     loadFileFromTree,
     createNewFile,
     createNewFolder,
+    movingFilePath,
   } = useStore()
+  const drag = useSidebarFileDrag()
+  const rootDropTarget = !!currentDirectory && drag.dropTargetPath === currentDirectory
 
   const handleSelectDirectory = async () => {
     const dir = await invoke<string | null>('select_directory')
@@ -83,12 +88,19 @@ export function Sidebar() {
   }
 
   return (
-    <div className="sidebar-panel w-[280px] h-full border-r flex flex-col">
+    <div ref={drag.rootRef} {...drag.handlers} className="sidebar-panel w-[280px] h-full border-r flex flex-col" aria-busy={!!movingFilePath}>
+      {drag.draggedFilePath && drag.position && (
+        <div className="file-drag-preview" style={{ left: drag.position.x, top: drag.position.y }} aria-hidden="true">
+          {drag.draggedFilePath.split(/[\\/]/).pop()?.replace(/\.excalidraw$/, '')}
+        </div>
+      )}
       {/* Header */}
       <div className="sidebar-section p-4 border-b">
         <button
           onClick={handleSelectDirectory}
-          className="sidebar-action w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors"
+          className={cn('sidebar-action w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors', rootDropTarget && 'file-drop-target')}
+          data-drop-directory={currentDirectory || undefined}
+          title={currentDirectory ? t('Drop files here to move to the workspace root') : undefined}
         >
           <FolderOpen className="w-4 h-4" />
           <span className="text-sm font-medium truncate">
@@ -117,7 +129,7 @@ export function Sidebar() {
 
       {/* File Tree */}
       <ScrollArea className="flex-1 overflow-y-auto">
-        <div className="p-2">
+        <div className={cn('p-2 min-h-full', rootDropTarget && 'file-drop-root')} data-drop-directory={currentDirectory || undefined}>
           {fileTree.length === 0 ? (
             <div className="sidebar-muted text-sm text-center py-8">
               {currentDirectory ? t('No .excalidraw files found') : t('No directory selected')}
@@ -127,6 +139,8 @@ export function Sidebar() {
               nodes={fileTree}
               onFileClick={loadFileFromTree}
               activeFilePath={activeFile?.path}
+              dropTargetPath={drag.dropTargetPath}
+              draggedFilePath={drag.draggedFilePath}
             />
           )}
         </div>
@@ -134,6 +148,11 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="sidebar-section p-3 border-t">
+        {(drag.draggedFilePath || movingFilePath) && (
+          <div className="sidebar-muted text-xs mb-2" role="status">
+            {movingFilePath ? t('Moving file...') : t('Drop onto a folder or the workspace name to move.')}
+          </div>
+        )}
         <div className="sidebar-muted text-xs">
           {t(countFilesInTree(fileTree) === 1 ? '{count} file' : '{count} files', { count: countFilesInTree(fileTree) })}
         </div>

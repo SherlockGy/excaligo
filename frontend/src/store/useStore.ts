@@ -4,6 +4,7 @@ import { CachedExcalidrawScene, ExcalidrawFile, FileTreeNode, OpenTab, Preferenc
 import { convertPreferencesFromBackend, convertPreferencesToBackend } from '../lib/preferences'
 import { ask } from '../lib/backend'
 import { translate, type MessageKey, type Parameters } from '../lib/i18n'
+import { canDropFile, findTreeNode, moveTreeFile, normalizeFilePath } from '../lib/fileMove'
 
 type UnsavedChangesDecision = 'save' | 'discard' | 'cancel'
 type FileLoadSource = 'cache' | 'disk' | null
@@ -13,6 +14,7 @@ let directoryLoadGeneration = 0
 let directoryWatch: Promise<unknown> = Promise.resolve()
 let preferenceWrites: Promise<unknown> = Promise.resolve()
 let appearanceGeneration = 0
+let fileTreeGeneration = 0
 
 function t(key: MessageKey, parameters?: Parameters): string {
   return translate(useStore.getState().preferences.language, key, parameters)
@@ -129,6 +131,7 @@ interface AppStore {
   isDirty: boolean
   readOnly: boolean
   savingBeforeReadOnly: boolean
+  movingFilePath: string | null
   presentationMode: boolean
   openTabs: OpenTab[]
 
@@ -159,6 +162,7 @@ interface AppStore {
   createNewFolder: (folderName?: string, directory?: string) => Promise<void>
   renameFile: (oldPath: string, newName: string) => Promise<void>
   renameFolder: (oldPath: string, newName: string) => Promise<void>
+  moveFile: (filePath: string, directory: string) => Promise<boolean>
   deleteFile: (filePath: string) => Promise<boolean>
   deleteFolder: (folderPath: string) => Promise<boolean>
   loadPreferences: () => Promise<void>
@@ -187,6 +191,7 @@ export const useStore = create<AppStore>((set, get) => ({
   isDirty: false,
   readOnly: true,
   savingBeforeReadOnly: false,
+  movingFilePath: null,
   presentationMode: false,
   openTabs: [],
 
@@ -247,7 +252,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Load directory and list files
   loadDirectory: async (dir) => {
-    if (get().savingBeforeReadOnly) return false
+    if (get().savingBeforeReadOnly || get().movingFilePath) return false
     const logPrefix = `[loadDirectory 加载工作目录][directory=${dir}]`
     const generation = ++directoryLoadGeneration
     fileLoadGeneration++
@@ -323,12 +328,13 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Load file tree only
   loadFileTree: async (dir) => {
+    const generation = ++fileTreeGeneration
     try {
       const [fileTree, files] = await Promise.all([
         invoke<FileTreeNode[]>('get_file_tree', { directory: dir }),
         invoke<ExcalidrawFile[]>('list_excalidraw_files', { directory: dir }),
       ])
-      if (get().currentDirectory !== dir) return
+      if (get().currentDirectory !== dir || generation !== fileTreeGeneration) return
       const modified = new Set(get().openTabs.filter(tab => tab.modified).map(tab => tab.path))
       const mark = (nodes: FileTreeNode[]): FileTreeNode[] => nodes.map(node => ({
         ...node, modified: modified.has(node.path),
@@ -342,7 +348,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Load file content
   loadFile: async (file) => {
-    if (get().savingBeforeReadOnly) return
+    if (get().savingBeforeReadOnly || get().movingFilePath) return
     const state = get()
 
     // If clicking the same file that's already active, do nothing
@@ -473,7 +479,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // Save current file
   saveCurrentFile: async (content) => {
     const state = get()
-    if (state.readOnly) return
+    if (state.readOnly || state.movingFilePath) return
     const { activeFile, fileContent, isDirty } = state
 
     const pending = activeFile && savingFiles.get(activeFile.path)
@@ -547,7 +553,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // Application-level policy. Excalidraw stays an unmodified dependency.
   toggleReadOnly: async () => {
     const state = get()
-    if (!state.activeFile || state.savingBeforeReadOnly) return
+    if (!state.activeFile || state.savingBeforeReadOnly || state.movingFilePath) return
     if (state.readOnly) {
       set({ readOnly: false })
       return
@@ -574,7 +580,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Create new file
   createNewFile: async (fileName, directory) => {
-    if (get().savingBeforeReadOnly) return
+    if (get().savingBeforeReadOnly || get().movingFilePath) return
     const state = get()
     let { currentDirectory } = state
 
@@ -666,6 +672,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Create new folder
   createNewFolder: async (folderName, directory) => {
+    if (get().movingFilePath) return
     const state = get()
     let { currentDirectory } = state
 
@@ -707,7 +714,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Rename file
   renameFile: async (oldPath, newName) => {
-    if (get().savingBeforeReadOnly) return
+    if (get().savingBeforeReadOnly || get().movingFilePath) return
     try {
       // Ensure the new name has .excalidraw extension
       const finalName = newName.endsWith('.excalidraw')
@@ -745,7 +752,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Rename folder
   renameFolder: async (oldPath, newName) => {
-    if (get().savingBeforeReadOnly) return
+    if (get().savingBeforeReadOnly || get().movingFilePath) return
     try {
       const newPath = await invoke<string>('rename_folder', {
         oldPath,
@@ -788,10 +795,50 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
+  // Moving changes the path only; unsaved content stays in the existing tab.
+  moveFile: async (filePath, directory) => {
+    const logPrefix = `[moveFile 移动侧边栏文件][filePath=${filePath}][directory=${directory}]`
+    const state = get()
+    const source = findTreeNode(state.fileTree, filePath)
+    const target = directory === state.currentDirectory || findTreeNode(state.fileTree, directory)?.is_directory
+    if (state.movingFilePath || state.savingBeforeReadOnly || !state.currentDirectory ||
+      !source || source.is_directory || !target || !canDropFile(filePath, directory)) return false
+
+    const expectedPath = `${normalizeFilePath(directory).replace(/\/$/, '')}/${source.name}`
+    if (state.openTabs.some(tab => normalizeFilePath(tab.path) === expectedPath)) {
+      alert(t('A file with this name is already open.'))
+      return false
+    }
+
+    set({ movingFilePath: filePath })
+    fileLoadGeneration++
+    directoryLoadGeneration++
+    fileTreeGeneration++
+    try {
+      // Wait for an already-started write, while preventing new writes to the old path.
+      await savingFiles.get(filePath)
+      const newPath = await invoke<string>('move_file', { filePath, directory })
+      set(current => ({
+        activeFile: current.activeFile?.path === filePath ? { ...current.activeFile, path: newPath } : current.activeFile,
+        openTabs: current.openTabs.map(tab => tab.path === filePath ? { ...tab, path: newPath } : tab),
+        files: current.files.map(file => file.path === filePath ? { ...file, path: newPath } : file),
+        fileTree: moveTreeFile(current.fileTree, filePath, newPath, directory, state.currentDirectory!),
+      }))
+      await get().loadFileTree(state.currentDirectory)
+      return true
+    } catch (error) {
+      console.error(logPrefix, error)
+      alert(t('Failed to move file: {error}', { error: String(error) }))
+      return false
+    } finally {
+      set({ movingFilePath: null })
+    }
+  },
+
   // Delete file
   // NOTE: Confirmation should be handled by the caller
   deleteFile: async (filePath) => {
-    if (get().savingBeforeReadOnly) return false
+    if (get().savingBeforeReadOnly || get().movingFilePath) return false
     try {
       await invoke('delete_file', { filePath })
       const state = get()
@@ -823,7 +870,7 @@ export const useStore = create<AppStore>((set, get) => ({
   // Delete folder
   // NOTE: Confirmation should be handled by the caller
   deleteFolder: async (folderPath) => {
-    if (get().savingBeforeReadOnly) return false
+    if (get().savingBeforeReadOnly || get().movingFilePath) return false
     try {
       await invoke('delete_folder', { folderPath })
       const state = get()
@@ -1001,7 +1048,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Close tab
   closeTab: async (filePath) => {
-    if (get().savingBeforeReadOnly) return
+    if (get().savingBeforeReadOnly || get().movingFilePath) return
     const state = get()
     const tabIndex = state.openTabs.findIndex(t => t.path === filePath)
     if (tabIndex === -1) return

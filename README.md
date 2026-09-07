@@ -43,6 +43,7 @@ macOS 打包脚本使用 Go **1.26.8**，保持原项目 macOS **12.0** 的最�
 
 - 文件夹树与递归文件列表、文件夹优先排序、隐藏文件过滤。
 - 文件及文件夹新建、重命名、删除；重名时最多尝试 100 个数字后缀。
+- 侧边栏拖动单个文件进入子目录或移回工作目录根层级；同名目标拒绝覆盖。
 - Excalidraw 完整绘图编辑器，多标签页、画布缓存和 BLAKE3 外部变更检测。
 - 默认只读查看；应用工具栏切换编辑，编辑转只读前自动保存，查看时拖动和缩放不改写绘图文件。
 - 手动保存、30 秒自动保存、另存为、PNG / SVG / Excalidraw / 素材库导出。
@@ -56,6 +57,14 @@ macOS 打包脚本使用 Go **1.26.8**，保持原项目 macOS **12.0** 的最�
 偏好设置保存在系统配置目录的 `excaligo/preferences.json`，可用 `EXCALIGO_CONFIG_DIR` 指定配置父目录以隔离开发与测试。文件采用与原项目相同的 `preferences` 包装对象及 snake_case 字段；不会自动改写旧应用的配置文件。绘图文件可以直接打开，无需转换。
 
 删除操作与原项目一致：经过界面确认后直接删除，文件夹包含的内容也会删除，不会移入回收站。
+
+## 侧边栏状态与文件移动
+
+未保存黄点位于文件图标与文件名之间；保存后黄点及间距一并消失，不预留空位。长文件名只截断文字，黄点保持可见，悬停可查看完整文件名及未保存提示。选中文件用背景色表示，不再额外显示右箭头；文件夹的展开箭头保留。
+
+按住文件行拖到目标文件夹即可移动；移回根层级时，拖到顶部工作目录名称或文件列表空白区域。悬停折叠目录 600 毫秒会展开，按 Escape 可取消。只接受侧边栏中的单个文件，不拖动目录，也不把外部文件当作移动来源。
+
+移动只改变文件路径，不重新序列化 Excalidraw 数据。只读文件的内容和修改时间保持不变；编辑中的未保存内容随标签页保留，之后手动保存或正常自动保存会使用新路径。移动期间暂缓保存、关闭及其他会改变路径的操作，并协调目录监听，防止旧路径被误判为删除。同名文件或目录不会被覆盖；跨文件系统的移动会安全失败，保留源文件，不自动退化为复制后删除。
 
 ## 主题与语言
 
@@ -101,11 +110,27 @@ go vet ./...
 npm --prefix frontend run typecheck
 npm --prefix frontend run test:run
 npm --prefix frontend audit
+node --test scripts/release-config.test.mjs
 ```
 
 Go 测试包括原始样例无损往返、文件操作、JSON 校验、BLAKE3 向量、路径和符号链接越界、并发新建、写入失败、偏好设置兼容与目录监听生命周期。前端测试覆盖保存失败拦截、空画布、并发保存、自动保存、标签缓存、异步读取顺序、另存为和快捷键。
 
-CI 配置包含 macOS 和 Windows 构建、测试任务，macOS 应用包以 tar.gz 上传以保留可执行权限。主题/语言基线及 CI 参数修复已通过 [双平台 GitHub Actions](https://github.com/SherlockGy/excaligo/actions/runs/34152860251)。当前本地已通过 Go 竞态测试、前端类型检查、53 项前端测试、macOS 原生构建与主题/语言/只读交互验收，以及 Windows x64 交叉编译；依赖审计未报告漏洞。Windows 实机交互、Linux 原生构建、macOS 12 实机尚未验收；构建成功不代表这些实机验证已完成。
+CI 配置包含 Apple Silicon macOS、Intel macOS 和 Windows x64 的原生构建、Go 竞态测试、前端测试和发布包检查。测试覆盖同名并发移动拒绝覆盖、路径越界、未保存缓存迁移、移动与保存竞争、旧目录响应失效及侧边栏拖动交互。Windows 实机交互、Linux 原生构建、macOS 12 实机尚未验收；构建成功不代表这些实机验证已完成。
+
+## GitHub Release
+
+`.github/workflows/release.yml` 在推送 `v` 开头的版本标签时运行，复用 CI 的三平台构建和测试，全部成功后才创建 Release。版本必须符合 `v1.2.3` 或 `v1.2.3-beta.1` 形式；预发布标签会标记为 prerelease。普通分支推送和手动运行 CI 只生成 Actions 构建产物，不发布版本，也不会自动创建标签。
+
+发布资产包括：
+
+- `Excaligo-v<版本>-macos-arm64.zip`：Apple Silicon Mac，解压得到 `Excaligo.app`。
+- `Excaligo-v<版本>-macos-amd64.zip`：Intel Mac，同样为普通 `.app` 压缩包。
+- `Excaligo-v<版本>-windows-amd64.exe`：Windows x64 免安装可执行文件，无安装器和控制台窗口。
+- `SHA256SUMS.txt`：以上三个文件的 SHA-256 校验值，发布前再次核对。
+
+macOS 包不使用 Apple Developer ID 证书、不公证，仅保留本地 ad-hoc 签名；首次打开可能需要通过系统“隐私与安全性”允许。ZIP 通过 `ditto` 打包，保留应用结构和可执行权限。Windows 文件不做 Authenticode 签名，可能出现未知发布者提示；运行仍需要 [Microsoft Edge WebView2 Runtime](https://v3.wails.io/getting-started/installation/#platform-specific-dependencies)，无需安装 Excaligo 本身。
+
+本地生成同格式的发布包：先执行对应平台构建，再运行 `node scripts/package-release.mjs`。产物在 `bin/release/`，已存在的同名产物不会被覆盖。CI 和本地打包共享版本及命名规则；macOS 包内版本会随标签更新。发布使用 GitHub 自动提供的 token，只有最后的发布任务拥有 `contents: write`，无需配置签名密钥或个人访问令牌。已有 Release 不会自动覆盖或替换。
 
 ## 来源
 

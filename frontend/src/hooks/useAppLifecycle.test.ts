@@ -60,5 +60,26 @@ it('does not autosave in read-only mode or during the save-to-read-only transiti
   useStore.setState({ readOnly: false, savingBeforeReadOnly: true })
   await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
   expect(save).not.toHaveBeenCalled()
+  useStore.setState({ savingBeforeReadOnly: false, movingFilePath: '/work/file.excalidraw' })
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+  expect(save).not.toHaveBeenCalled()
+  unmount()
+})
+
+it('does not prune tabs or force quit during a move and refreshes after it completes', async () => {
+  const tab = { name: 'file.excalidraw', path: '/work/file.excalidraw', modified: false,
+    cachedContent: '{}', cachedScene: { elements: [], appState: {} }, contentHash: '', sceneVersion: 0 }
+  const refresh = vi.fn().mockResolvedValue(undefined)
+  useStore.setState({ currentDirectory: '/work', activeFile: tab, openTabs: [tab], movingFilePath: tab.path, loadFileTree: refresh })
+  const { unmount } = renderHook(useAppLifecycle)
+  const change = mockListen.mock.calls.find(([name]) => name === 'file-system-change')![1]
+  const close = mockListen.mock.calls.find(([name]) => name === 'check-unsaved-before-close')![1]
+  await act(async () => { await change({ payload: tab.path }); await close({ payload: null }) })
+  expect(useStore.getState().openTabs).toEqual([tab])
+  expect(mockInvoke).not.toHaveBeenCalledWith('force_close_app')
+  expect(refresh).not.toHaveBeenCalled()
+  await act(async () => { useStore.setState({ movingFilePath: null, files: [tab] }) })
+  expect(refresh).toHaveBeenCalledWith('/work')
+  expect(useStore.getState().activeFile).toEqual(tab)
   unmount()
 })

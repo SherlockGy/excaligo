@@ -206,7 +206,7 @@ export function ExcalidrawEditor() {
   const activeFile = useStore(state => state.activeFile)
   const openTabs = useStore(state => state.openTabs)
   const presentationMode = useStore(state => state.presentationMode)
-  const readOnly = useStore(state => state.readOnly || state.savingBeforeReadOnly)
+  const readOnly = useStore(state => state.readOnly || state.savingBeforeReadOnly || state.movingFilePath !== null)
   const theme = useTheme()
 
   if (!activeFile) {
