@@ -94,12 +94,14 @@ it('keeps file actions and inline rename usable without triggering file selectio
   expect(mockInvoke).not.toHaveBeenCalled()
 })
 
-it('shares the translated unsaved tooltip between the file list and tabs and clears both after saving', () => {
+it('places both unsaved indicators before the filename with translated tooltips and removes their space after saving', () => {
   useStore.setState({ openTabs: [tab], activeFile: tab })
   const { rerender } = render(<><TreeView nodes={[file]} onFileClick={vi.fn()} /><TabBar /></>)
   for (const indicator of screen.getAllByRole('img', { name: 'Unsaved Changes' })) {
     expect(indicator).toHaveAttribute('title', 'Unsaved Changes')
     expect(indicator).toHaveClass('modified-dot')
+    expect(indicator.previousElementSibling).toBeNull()
+    expect(indicator.nextElementSibling).toHaveTextContent('Sketch')
   }
   act(() => { useStore.setState({ preferences: { ...initial.preferences, language: 'zh' } }) })
   const indicators = screen.getAllByRole('img', { name: '未保存的更改' })
@@ -110,6 +112,29 @@ it('shares the translated unsaved tooltip between the file list and tabs and cle
   act(() => { useStore.setState({ openTabs: [{ ...tab, modified: false }] }) })
   rerender(<><TreeView nodes={[{ ...file, modified: false }]} onFileClick={vi.fn()} /><TabBar /></>)
   expect(screen.queryByRole('img', { name: '未保存的更改' })).not.toBeInTheDocument()
+  for (const filename of screen.getAllByText('Sketch')) {
+    expect(filename.previousElementSibling).toBeNull()
+  }
+})
+
+it.each([false, true])('keeps the tab indicator before a long filename in presentation mode %s', (presentationMode) => {
+  const name = '架构设计与详细交互流程评审记录-Architecture-and-interaction-review.excalidraw'
+  const longTab = { ...tab, name }
+  useStore.setState({ openTabs: [longTab], activeFile: longTab, presentationMode })
+  render(<TabBar />)
+  const filename = screen.getByTitle(name)
+  const indicator = screen.getByRole('img', { name: 'Unsaved Changes' })
+  expect(filename).toHaveClass('truncate', 'min-w-0')
+  expect(filename.previousElementSibling).toBe(indicator)
+  expect(indicator.previousElementSibling).toBeNull()
+  if (presentationMode) {
+    expect(filename.nextElementSibling).toBeNull()
+  } else {
+    expect(filename.nextElementSibling).toBe(screen.getByRole('button', { name: `Close ${name}` }))
+  }
+  act(() => { useStore.setState({ openTabs: [{ ...longTab, modified: false }] }) })
+  expect(screen.queryByRole('img', { name: 'Unsaved Changes' })).not.toBeInTheDocument()
+  expect(screen.getByTitle(name).previousElementSibling).toBeNull()
 })
 
 it('checks the latest background dirty state before confirming deletion', async () => {

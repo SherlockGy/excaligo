@@ -13,7 +13,8 @@ let fileLoadGeneration = 0
 let directoryLoadGeneration = 0
 let directoryWatch: Promise<unknown> = Promise.resolve()
 let preferenceWrites: Promise<unknown> = Promise.resolve()
-let appearanceGeneration = 0
+let confirmedPreferences: Preferences | null = null
+const pendingPreferenceWrites: Partial<Preferences>[] = []
 let fileTreeGeneration = 0
 let editorSequence = 0
 
@@ -205,8 +206,9 @@ interface AppStore {
   deleteFile: (filePath: string) => Promise<boolean>
   deleteFolder: (folderPath: string) => Promise<boolean>
   loadPreferences: () => Promise<void>
-  savePreferences: () => Promise<boolean>
+  savePreferences: (updates: Partial<Preferences>) => Promise<boolean>
   updateAppearance: (updates: Partial<Pick<Preferences, 'theme' | 'language'>>) => Promise<void>
+  setReadOnlyWheelZoom: (enabled: boolean) => Promise<void>
   toggleSidebar: () => void
 }
 
@@ -225,6 +227,7 @@ export const useStore = create<AppStore>((set, get) => ({
     language: 'en',
     sidebarVisible: true,
     showDecorations: true,
+    readOnlyWheelZoom: false,
   },
   sidebarVisible: true,
   isDirty: false,
@@ -369,14 +372,10 @@ export const useStore = create<AppStore>((set, get) => ({
         recentDirs.pop()
       }
 
-      const newPrefs: Preferences = {
-        ...prefs,
+      await get().savePreferences({
         lastDirectory: dir,
         recentDirectories: recentDirs,
-      }
-
-      set({ preferences: newPrefs })
-      await get().savePreferences()
+      })
 
       return true
     } catch (error) {
@@ -1065,9 +1064,7 @@ export const useStore = create<AppStore>((set, get) => ({
         } catch (dirError) {
           console.error('Failed to auto-load last directory:', dirError)
           // Clear the invalid lastDirectory from preferences
-          const newPrefs = { ...safePrefs, lastDirectory: null }
-          set({ preferences: newPrefs })
-          await get().savePreferences()
+          await get().savePreferences({ lastDirectory: null })
         }
       }
     } catch (error) {
@@ -1080,6 +1077,7 @@ export const useStore = create<AppStore>((set, get) => ({
         language: 'en',
         sidebarVisible: true,
         showDecorations: true,
+        readOnlyWheelZoom: false,
       }
       set({
         preferences: defaultPrefs,
@@ -1089,36 +1087,55 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   // Save preferences
-  savePreferences: async () => {
+  savePreferences: (updates) => {
     const logPrefix = '[savePreferences 保存应用设置][app=excaligo]'
-    const { preferences } = get()
-    try {
-      // Convert camelCase to snake_case for Go backend
-      const prefsToSave = convertPreferencesToBackend(preferences)
-      preferenceWrites = preferenceWrites.catch(() => {}).then(() => invoke('save_preferences', { preferences: prefsToSave }))
-      await preferenceWrites
-      return true
-    } catch (error) {
-      console.error(logPrefix, error)
-      alert(t('Failed to save preferences: {error}', { error: String(error) }))
-      return false
-    }
+    const request = { ...updates }
+    if (pendingPreferenceWrites.length === 0) confirmedPreferences = get().preferences
+    pendingPreferenceWrites.push(request)
+    set(state => ({
+      preferences: { ...state.preferences, ...request },
+      sidebarVisible: request.sidebarVisible ?? state.sidebarVisible,
+    }))
+
+    const result = preferenceWrites.then(async () => {
+      // Construct the full backend payload only when this request runs. Failed
+      // optimistic values from earlier requests must never enter later writes.
+      const next = { ...confirmedPreferences!, ...request }
+      let saved = false
+      let errorMessage: string | undefined
+      try {
+        await invoke('save_preferences', { preferences: convertPreferencesToBackend(next) })
+        confirmedPreferences = next
+        saved = true
+      } catch (error) {
+        console.error(logPrefix, error)
+        errorMessage = t('Failed to save preferences: {error}', { error: String(error) })
+      } finally {
+        pendingPreferenceWrites.shift()
+        // Reapply newer pending choices, including later edits to the same
+        // field. Reconcile before allowing the next queued request to run.
+        const visible = pendingPreferenceWrites.reduce((prefs, patch) => ({ ...prefs, ...patch }), confirmedPreferences!)
+        const resolved = Object.fromEntries(Object.keys(request).map(key => [key, visible[key as keyof Preferences]]))
+        set(state => ({
+          preferences: { ...state.preferences, ...resolved },
+          sidebarVisible: 'sidebarVisible' in request ? visible.sidebarVisible : state.sidebarVisible,
+        }))
+      }
+      if (errorMessage) alert(errorMessage)
+      return saved
+    })
+    preferenceWrites = result.catch(() => {})
+    return result
   },
 
   updateAppearance: async (updates) => {
-    const generation = ++appearanceGeneration
-    const previous = get().preferences
-    const next = { ...previous, ...updates }
-    set({ preferences: next })
-    if (!await get().savePreferences()) {
-      if (generation !== appearanceGeneration) return
-      // Roll back only this failed selection, never a subsequent user choice.
-      set(state => {
-        const rollback: Partial<Preferences> = {}
-        if (updates.theme && state.preferences.theme === updates.theme) rollback.theme = previous.theme
-        if (updates.language && state.preferences.language === updates.language) rollback.language = previous.language
-        return { preferences: { ...state.preferences, ...rollback } }
-      })
+    await get().savePreferences(updates)
+  },
+
+  setReadOnlyWheelZoom: async (enabled) => {
+    const logPrefix = '[setReadOnlyWheelZoom 设置只读滚轮缩放][app=excaligo]'
+    if (await get().savePreferences({ readOnlyWheelZoom: enabled })) {
+      console.debug(logPrefix, { enabled })
     }
   },
 
@@ -1126,12 +1143,7 @@ export const useStore = create<AppStore>((set, get) => ({
   toggleSidebar: () => {
     const state = get()
     const newVisible = !state.sidebarVisible
-    set({ sidebarVisible: newVisible })
-
-    // Update preferences
-    const newPrefs = { ...state.preferences, sidebarVisible: newVisible }
-    set({ preferences: newPrefs })
-    state.savePreferences()
+    void state.savePreferences({ sidebarVisible: newVisible })
   },
 
   // Toggle presentation mode
@@ -1156,16 +1168,17 @@ export const useStore = create<AppStore>((set, get) => ({
 
   // Toggle decorations
   toggleDecorations: () => {
+    const logPrefix = '[toggleDecorations 切换窗口边框][app=excaligo]'
     const state = get()
     const newVisible = !state.preferences.showDecorations
     invoke('set_decorations', { visible: newVisible })
-      .then(() => {
-        const newPrefs = { ...state.preferences, showDecorations: newVisible }
-        set({ preferences: newPrefs })
-        get().savePreferences()
+      .then(async () => {
+        if (!await get().savePreferences({ showDecorations: newVisible })) {
+          await invoke('set_decorations', { visible: get().preferences.showDecorations })
+        }
       })
       .catch((error) => {
-        console.error('Failed to toggle window decorations:', error)
+        console.error(logPrefix, error)
         alert(t("Failed to toggle window decorations: {error}", { error: String(error) }))
       })
   },

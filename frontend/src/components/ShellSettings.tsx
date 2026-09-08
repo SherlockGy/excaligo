@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useTranslation } from '../hooks/useTranslation'
@@ -6,8 +6,10 @@ import { EXCALIDRAW_VERSION } from '../lib/version'
 
 export function ShellSettings() {
   const t = useTranslation()
-  const { theme, language } = useStore(state => state.preferences)
+  const { theme, language, readOnlyWheelZoom } = useStore(state => state.preferences)
   const updateAppearance = useStore(state => state.updateAppearance)
+  const setReadOnlyWheelZoom = useStore(state => state.setReadOnlyWheelZoom)
+  const wheelZoomDescription = useId()
   const details = useRef<HTMLDetailsElement>(null)
 
   useEffect(() => {
@@ -58,6 +60,15 @@ export function ShellSettings() {
           </select>
         </label>
         <p className="sidebar-muted">{t('Editor language is unchanged.')}</p>
+        <label className="wheel-zoom-setting">
+          <span>{t('Wheel zoom in read-only mode')}</span>
+          <input type="checkbox" role="switch" checked={readOnlyWheelZoom}
+            aria-describedby={wheelZoomDescription}
+            onChange={event => void setReadOnlyWheelZoom(event.target.checked)} />
+        </label>
+        <p id={wheelZoomDescription} className="sidebar-muted">
+          {t('Scroll to zoom, left-drag to pan. Only in read-only mode; drawing files stay unchanged.')}
+        </p>
         <dl className="engine-version">
           <dt>{t('Excalidraw version')}</dt>
           <dd>{EXCALIDRAW_VERSION}</dd>

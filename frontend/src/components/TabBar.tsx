@@ -34,10 +34,10 @@ export function TabBar() {
             )}
             onClick={() => loadFile(tab)}
           >
-            <span className="truncate">
+            {isModified && <UnsavedIndicator />}
+            <span className="truncate min-w-0" title={tab.name}>
               {tab.name.replace('.excalidraw', '')}
             </span>
-            {isModified && <UnsavedIndicator />}
             {!presentationMode && (
               <button
                 className="tab-close opacity-0 group-hover:opacity-100 p-0.5 rounded shrink-0 transition-opacity"

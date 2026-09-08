@@ -86,8 +86,7 @@ export async function executeMenuCommand(command: string, data?: unknown): Promi
       return
     }
     case 'clear_recent':
-      state.setPreferences({ ...state.preferences, recentDirectories: [] })
-      await useStore.getState().savePreferences()
+      await state.savePreferences({ recentDirectories: [] })
       return
     case 'toggle_sidebar': state.toggleSidebar(); return
     case 'presentation': state.togglePresentationMode(); return

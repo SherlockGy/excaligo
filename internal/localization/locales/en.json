@@ -125,5 +125,7 @@
   "Failed to move file: {error}": "Failed to move file: {error}",
   "Drop files here to move to the workspace root": "Drop files here to move to the workspace root",
   "Updating files...": "Updating files...",
-  "Drop onto a folder or the workspace name to move.": "Drop onto a folder or the workspace name to move."
+  "Drop onto a folder or the workspace name to move.": "Drop onto a folder or the workspace name to move.",
+  "Wheel zoom in read-only mode": "Wheel zoom in read-only mode",
+  "Scroll to zoom, left-drag to pan. Only in read-only mode; drawing files stay unchanged.": "Scroll to zoom, left-drag to pan. Only in read-only mode; drawing files stay unchanged."
 }

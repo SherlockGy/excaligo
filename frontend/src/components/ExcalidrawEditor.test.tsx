@@ -7,20 +7,25 @@ import { mockInvoke } from '../test/setup'
 import { DocumentModeButton } from './DocumentModeButton'
 import { fireEvent, waitFor } from '@testing-library/react'
 
-const editor = vi.hoisted(() => ({ mounted: vi.fn(), unmounted: vi.fn(), props: vi.fn() }))
+const editor = vi.hoisted(() => ({ mounted: vi.fn(), unmounted: vi.fn(), props: vi.fn(),
+  api: { scrollToContent: vi.fn(), refresh: vi.fn(), getAppState: vi.fn(), updateScene: vi.fn() } }))
 vi.mock('@excalidraw/excalidraw', () => ({
+  CaptureUpdateAction: { NEVER: 'NEVER' },
   Excalidraw: (props: Record<string, unknown>) => {
     editor.props(props)
     useEffect(() => {
       editor.mounted()
-      ;(props.excalidrawAPI as (api: unknown) => void)({ scrollToContent: vi.fn(), refresh: vi.fn() })
+      ;(props.excalidrawAPI as (api: unknown) => void)(editor.api)
       return editor.unmounted
     }, [])
-    return <div data-testid="editor-stub">{String(props.theme)}</div>
+    return <div data-testid="editor-stub">{String(props.theme)}<canvas data-testid="canvas-stub" /><button>Editor menu</button></div>
   },
 }))
 const initial = useStore.getState()
 beforeEach(() => {
+  editor.api.updateScene.mockReset()
+  editor.api.getAppState.mockReturnValue({ scrollX: 10, scrollY: 20, zoom: { value: 1 },
+    offsetLeft: 200, offsetTop: 60, height: 600, cursorButton: 'up' })
   useStore.setState(initial, true)
   const tab = { name: 'test.excalidraw', path: '/work/test.excalidraw', modified: true,
     cachedContent: 'unsaved', cachedScene: { elements: [], appState: {}, files: {} }, contentHash: '', sceneVersion: 0 }
@@ -79,7 +84,7 @@ it('switches with the shell button, saves edits, and keeps subsequent viewing tr
   change([{ id: 'new', type: 'rectangle' }], { scrollX: 900, zoom: { value: 4 } })
   expect(useStore.getState().isDirty).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Editing: Save and switch to read-only' }))
-  expect(screen.getByRole('button')).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Saving...: Save and switch to read-only' })).toBeDisabled()
   expect(editor.props.mock.lastCall![0].viewModeEnabled).toBe(true)
   await waitFor(() => expect(useStore.getState().readOnly).toBe(true))
   const saved = useStore.getState().fileContent
@@ -118,4 +123,167 @@ it('keeps the editor instance and undo history when the tab path changes', () =>
   })
   expect(editor.mounted).toHaveBeenCalledTimes(mounted)
   expect(editor.unmounted).not.toHaveBeenCalled()
+})
+
+function enableWheelZoom() {
+  useStore.setState({ preferences: { ...initial.preferences, readOnlyWheelZoom: true } })
+}
+
+it('captures plain wheel input once, accumulates rapid steps and never dirties or saves the drawing', async () => {
+  const content = prepareDocument()
+  enableWheelZoom()
+  let flush!: FrameRequestCallback
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { flush = callback; return 42 })
+  const original = editor.api.getAppState()
+  editor.api.updateScene.mockImplementation(({ appState }) => { change([], appState) })
+  render(<ExcalidrawEditor />)
+  const mounted = editor.mounted.mock.calls.length
+  const canvas = screen.getByTestId('canvas-stub')
+  const coreWheel = vi.fn()
+  canvas.addEventListener('wheel', coreWheel)
+  const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100, clientX: 500, clientY: 300 })
+  act(() => { canvas.dispatchEvent(event); canvas.dispatchEvent(new WheelEvent('wheel', {
+    bubbles: true, cancelable: true, deltaY: -100, clientX: 500, clientY: 300,
+  })) })
+  expect(event.defaultPrevented).toBe(true)
+  expect(coreWheel).not.toHaveBeenCalled()
+  expect(window.requestAnimationFrame).toHaveBeenCalledOnce()
+  act(() => { flush(0) })
+  expect(editor.api.updateScene).toHaveBeenCalledOnce()
+  const update = editor.api.updateScene.mock.lastCall![0]
+  expect(update.captureUpdate).toBe('NEVER')
+  expect(Object.keys(update.appState).sort()).toEqual(['scrollX', 'scrollY', 'zoom'])
+  expect(update.appState.zoom.value).toBeCloseTo(Math.exp(0.4))
+  expect(300 / update.appState.zoom.value - update.appState.scrollX).toBeCloseTo(300 - original.scrollX)
+  await useStore.getState().saveCurrentFile()
+  expect(useStore.getState()).toMatchObject({ fileContent: content, isDirty: false })
+  expect(useStore.getState().openTabs[0]).toMatchObject({ modified: false, cachedContent: content })
+  expect(mockInvoke).not.toHaveBeenCalled()
+  expect(editor.mounted).toHaveBeenCalledTimes(mounted)
+  vi.restoreAllMocks()
+})
+
+it.each(['disabled', 'editing', 'presentation', 'saving', 'moving', 'inactive'])(
+  'leaves the engine wheel behavior unchanged when %s', (mode) => {
+    prepareDocument()
+    enableWheelZoom()
+    if (mode === 'disabled') useStore.setState({ preferences: initial.preferences })
+    if (mode === 'editing') useStore.setState({ readOnly: false })
+    if (mode === 'presentation') useStore.setState({ presentationMode: true })
+    if (mode === 'saving') useStore.setState({ savingBeforeReadOnly: true })
+    if (mode === 'moving') useStore.setState({ fileMutationPath: '/work/test.excalidraw' })
+    if (mode === 'inactive') {
+      const other = { ...useStore.getState().openTabs[0], path: '/work/other.excalidraw' }
+      useStore.setState({ openTabs: [...useStore.getState().openTabs, other], activeFile: other })
+    }
+    render(<ExcalidrawEditor />)
+    const canvas = screen.getAllByTestId('canvas-stub')[0]
+    const coreWheel = vi.fn()
+    canvas.addEventListener('wheel', coreWheel)
+    const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100 })
+    act(() => { canvas.dispatchEvent(event) })
+    expect(coreWheel).toHaveBeenCalledOnce()
+    expect(event.defaultPrevented).toBe(false)
+    expect(editor.api.updateScene).not.toHaveBeenCalled()
+  },
+)
+
+it('preserves modified wheel, editor menu scrolling and native left-button pointer events', () => {
+  prepareDocument()
+  enableWheelZoom()
+  render(<ExcalidrawEditor />)
+  const canvas = screen.getByTestId('canvas-stub')
+  const menu = screen.getByRole('button', { name: 'Editor menu' })
+  for (const [target, options] of [[canvas, { ctrlKey: true }], [canvas, { metaKey: true }], [menu, {}]] as const) {
+    const event = new WheelEvent('wheel', { ...options, bubbles: true, cancelable: true, deltaY: -100 })
+    const nativeWheel = vi.fn()
+    target.addEventListener('wheel', nativeWheel, { once: true })
+    fireEvent(target, event)
+    expect(nativeWheel).toHaveBeenCalledOnce()
+    expect(event.defaultPrevented).toBe(false)
+  }
+  const pointer = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })
+  const nativePointer = vi.fn()
+  canvas.addEventListener('pointerdown', nativePointer)
+  fireEvent(canvas, pointer)
+  expect(nativePointer).toHaveBeenCalledOnce()
+  expect(pointer.defaultPrevented).toBe(false)
+  expect(editor.props.mock.lastCall![0].viewModeEnabled).toBe(true)
+  expect(editor.api.updateScene).not.toHaveBeenCalled()
+})
+
+it.each(['editing', 'disabled', 'unmount'])('cancels pending zoom when %s before the next frame', (mode) => {
+  prepareDocument()
+  enableWheelZoom()
+  let flush!: FrameRequestCallback
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { flush = callback; return 42 })
+  const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+  const { unmount } = render(<ExcalidrawEditor />)
+  fireEvent.wheel(screen.getByTestId('canvas-stub'), { deltaY: -100 })
+  act(() => {
+    if (mode === 'editing') useStore.setState({ readOnly: false })
+    if (mode === 'disabled') useStore.setState({ preferences: initial.preferences })
+    if (mode !== 'unmount') flush(0)
+  })
+  if (mode === 'unmount') {
+    unmount()
+    expect(cancel).toHaveBeenCalledWith(42)
+  }
+  expect(editor.api.updateScene).not.toHaveBeenCalled()
+  vi.restoreAllMocks()
+})
+
+it.each(['zoom', 'pan', 'offset'])('does not overwrite newer native %s changes with a queued wheel update', (operation) => {
+  prepareDocument()
+  enableWheelZoom()
+  let flush!: FrameRequestCallback
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { flush = callback; return 42 })
+  render(<ExcalidrawEditor />)
+  const canvas = screen.getByTestId('canvas-stub')
+  fireEvent.wheel(canvas, { deltaY: -100, clientX: 500, clientY: 300 })
+  const state = editor.api.getAppState()
+  const changes = operation === 'zoom' ? { zoom: { value: 2 } }
+    : operation === 'pan' ? { scrollX: 100, scrollY: 50 } : { offsetLeft: 0 }
+  editor.api.getAppState.mockReturnValue({ ...state, ...changes, cursorButton: 'up' })
+  act(() => { flush(0) })
+  expect(editor.api.updateScene).not.toHaveBeenCalled()
+  // A subsequent wheel step must start from the latest native viewport.
+  fireEvent.wheel(canvas, { deltaY: -100, clientX: 500, clientY: 300 })
+  act(() => { flush(0) })
+  expect(editor.api.updateScene).toHaveBeenCalledOnce()
+  expect(editor.api.updateScene.mock.lastCall![0].appState.zoom.value).toBeCloseTo((operation === 'zoom' ? 2 : 1) * Math.exp(0.2))
+  vi.restoreAllMocks()
+})
+
+it('discards an old wheel batch before accumulating input after a native pan', () => {
+  prepareDocument()
+  enableWheelZoom()
+  let flush!: FrameRequestCallback
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { flush = callback; return 42 })
+  render(<ExcalidrawEditor />)
+  const canvas = screen.getByTestId('canvas-stub')
+  fireEvent.wheel(canvas, { deltaY: -100, clientX: 500, clientY: 300 })
+  const latest = { ...editor.api.getAppState(), scrollX: 200, scrollY: 100 }
+  editor.api.getAppState.mockReturnValue(latest)
+  fireEvent.wheel(canvas, { deltaY: -100, clientX: 500, clientY: 300 })
+  act(() => { flush(0) })
+  const next = editor.api.updateScene.mock.lastCall![0].appState
+  expect(next.zoom.value).toBeCloseTo(Math.exp(0.2))
+  expect(300 / next.zoom.value - next.scrollX).toBeCloseTo(300 - latest.scrollX)
+  expect(240 / next.zoom.value - next.scrollY).toBeCloseTo(240 - latest.scrollY)
+  vi.restoreAllMocks()
+})
+
+it.each(['ctrl', 'cmd', 'drag'])('cancels a pending plain-wheel batch when handing control to native %s input', (input) => {
+  prepareDocument()
+  enableWheelZoom()
+  let flush!: FrameRequestCallback
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { flush = callback; return 42 })
+  render(<ExcalidrawEditor />)
+  const canvas = screen.getByTestId('canvas-stub')
+  fireEvent.wheel(canvas, { deltaY: -100, clientX: 500, clientY: 300 })
+  fireEvent.wheel(canvas, { deltaY: -100, ctrlKey: input === 'ctrl', metaKey: input === 'cmd', buttons: input === 'drag' ? 1 : 0 })
+  act(() => { flush(0) })
+  expect(editor.api.updateScene).not.toHaveBeenCalled()
+  vi.restoreAllMocks()
 })

@@ -10,7 +10,7 @@ func TestDefaultsPersistenceAndLegacySchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config", "preferences.json")
 	store := New(path, nil)
 	got, err := store.Load()
-	if err != nil || got.Theme != "system" || !got.ShowDecorations || !got.SidebarVisible || got.RecentDirectories == nil {
+	if err != nil || got.ReadOnlyWheelZoom || got.Theme != "system" || !got.ShowDecorations || !got.SidebarVisible || got.RecentDirectories == nil {
 		t.Fatalf("%+v %v", got, err)
 	}
 	dir := "/workspace"
@@ -27,8 +27,23 @@ func TestDefaultsPersistenceAndLegacySchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err = store.Load()
-	if err != nil || !got.ShowDecorations || got.SidebarVisible || got.RecentDirectories == nil {
+	if err != nil || got.ReadOnlyWheelZoom || !got.ShowDecorations || got.SidebarVisible || got.RecentDirectories == nil {
 		t.Fatalf("legacy=%+v %v", got, err)
+	}
+}
+
+func TestReadOnlyWheelZoomPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "preferences.json")
+	for _, enabled := range []bool{true, false} {
+		prefs := Default()
+		prefs.ReadOnlyWheelZoom = enabled
+		if err := New(path, nil).Save(prefs); err != nil {
+			t.Fatal(err)
+		}
+		got, err := New(path, nil).Load()
+		if err != nil || got.ReadOnlyWheelZoom != enabled {
+			t.Fatalf("read-only wheel zoom: %+v %v", got, err)
+		}
 	}
 }
 

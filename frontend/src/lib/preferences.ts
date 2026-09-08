@@ -6,6 +6,7 @@ import { Preferences } from '../types'
 export function convertPreferencesFromBackend(backendPrefs: any): Preferences {
   return {
     language: backendPrefs?.language === 'zh' ? 'zh' : 'en',
+    readOnlyWheelZoom: (backendPrefs?.read_only_wheel_zoom ?? backendPrefs?.readOnlyWheelZoom) === true,
     lastDirectory: backendPrefs?.last_directory || backendPrefs?.lastDirectory || null,
     recentDirectories: backendPrefs?.recent_directories || backendPrefs?.recentDirectories || [],
     theme: backendPrefs?.theme || 'system',
@@ -24,6 +25,7 @@ export function convertPreferencesFromBackend(backendPrefs: any): Preferences {
 export function convertPreferencesToBackend(tsPrefs: Preferences): any {
   return {
     language: tsPrefs.language,
+    read_only_wheel_zoom: tsPrefs.readOnlyWheelZoom === true,
     last_directory: tsPrefs.lastDirectory || null,
     recent_directories: tsPrefs.recentDirectories || [],
     theme: tsPrefs.theme || 'system',

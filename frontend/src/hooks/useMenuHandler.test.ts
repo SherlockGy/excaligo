@@ -49,3 +49,16 @@ it('preserves edits made while the save-as dialog is open', async () => {
   expect(useStore.getState().isDirty).toBe(true)
   expect(useStore.getState().openTabs).toHaveLength(2)
 })
+
+it('clears recent directories through the settings queue without reverting other settings', async () => {
+  useStore.setState({ preferences: { ...initial.preferences, recentDirectories: ['/work'] } })
+  mockInvoke.mockResolvedValue(undefined)
+  await Promise.all([
+    useStore.getState().setReadOnlyWheelZoom(true),
+    executeMenuCommand('clear_recent'),
+  ])
+  expect(useStore.getState().preferences).toMatchObject({ recentDirectories: [], readOnlyWheelZoom: true })
+  expect(mockInvoke).toHaveBeenLastCalledWith('save_preferences', {
+    preferences: expect.objectContaining({ recent_directories: [], read_only_wheel_zoom: true }),
+  })
+})

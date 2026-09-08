@@ -125,5 +125,7 @@
   "Failed to move file: {error}": "移动文件失败：{error}",
   "Drop files here to move to the workspace root": "将文件拖到此处以移回工作目录根层级",
   "Updating files...": "正在更新文件…",
-  "Drop onto a folder or the workspace name to move.": "拖到文件夹或顶部工作目录名称上以移动文件。"
+  "Drop onto a folder or the workspace name to move.": "拖到文件夹或顶部工作目录名称上以移动文件。",
+  "Wheel zoom in read-only mode": "只读时滚轮缩放",
+  "Scroll to zoom, left-drag to pan. Only in read-only mode; drawing files stay unchanged.": "滚轮缩放，左键拖动画布。仅在只读模式生效，不修改绘图文件。"
 }

@@ -21,6 +21,7 @@ type Preferences struct {
 	Language          string   `json:"language"`
 	SidebarVisible    bool     `json:"sidebar_visible"`
 	ShowDecorations   bool     `json:"show_decorations"`
+	ReadOnlyWheelZoom bool     `json:"read_only_wheel_zoom"`
 }
 
 func Default() Preferences {

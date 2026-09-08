@@ -8,4 +8,5 @@ export interface Preferences {
     "language": string;
     "sidebar_visible": boolean;
     "show_decorations": boolean;
+    "read_only_wheel_zoom": boolean;
 }

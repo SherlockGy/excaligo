@@ -41,4 +41,5 @@ export interface Preferences {
   theme: 'light' | 'dark' | 'system'
   sidebarVisible: boolean
   showDecorations: boolean
+  readOnlyWheelZoom: boolean
 }

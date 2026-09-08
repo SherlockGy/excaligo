@@ -128,7 +128,9 @@ html, body, #root {
   background: var(--app-bg);
 }
 .shell-settings p { margin: 10px 0 0; font-size: 12px; line-height: 1.5; }
-.shell-toolbar :is(button, select, summary):focus-visible,
+.wheel-zoom-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--app-border); cursor: pointer; }
+.wheel-zoom-setting input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--app-accent); cursor: pointer; }
+.shell-toolbar :is(button, input, select, summary):focus-visible,
 .sidebar-panel :is(button, input):focus-visible {
   outline: 2px solid var(--app-accent);
   outline-offset: 2px;

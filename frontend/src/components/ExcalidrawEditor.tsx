@@ -8,6 +8,7 @@ import { TIMING } from '../constants'
 import type { OpenTab } from '../types'
 import { useTheme } from '../hooks/useTheme'
 import { sceneFingerprint, serializeScene } from '../lib/scene'
+import { useReadOnlyWheelZoom } from '../hooks/useReadOnlyWheelZoom'
 
 type ExcalidrawElement = Parameters<NonNullable<ExcalidrawProps['onChange']>>[0][number]
 
@@ -23,12 +24,17 @@ function EditorPane({ tab, isActive, presentationMode, readOnly, theme }: Editor
   const t = useTranslation()
   const [isReady, setIsReady] = useState(false)
   const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const wheelZoom = useStore(state => state.preferences.readOnlyWheelZoom)
   const initialLoadCompleteRef = useRef(false)
   const isUserChangeRef = useRef(false)
   const lastSavedElementsRef = useRef(sceneFingerprint(tab.cachedScene))
   const hasCenteredInitialContentRef = useRef(false)
   const centerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const centerChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useReadOnlyWheelZoom(containerRef, excalidrawAPIRef, tab.path,
+    isReady && isActive && readOnly && !presentationMode && wheelZoom)
 
   const initialData = useMemo(() => ({
     elements: tab.cachedScene.elements,
@@ -163,6 +169,7 @@ function EditorPane({ tab, isActive, presentationMode, readOnly, theme }: Editor
 
   return (
     <div
+      ref={containerRef}
       className={`absolute inset-0 h-full ${isActive ? 'visible z-10' : 'invisible z-0 pointer-events-none'}`}
       aria-hidden={!isActive}
     >
