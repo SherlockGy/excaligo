@@ -4,5 +4,6 @@
 export type {
     Content,
     File,
-    Node
+    Node,
+    SaveResult
 } from "./models.js";

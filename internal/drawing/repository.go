@@ -200,40 +200,82 @@ func (r *Repository) HashFile(path string) (string, error) {
 	return result.ContentHash, err
 }
 
-func (r *Repository) Save(path, content string) (string, error)   { return r.save(path, content, false) }
-func (r *Repository) SaveAs(path, content string) (string, error) { return r.save(path, content, true) }
+func (r *Repository) Save(path, content, expectedHash string) (SaveResult, error) {
+	if expectedHash == "" {
+		return SaveResult{}, errors.New("the saved file version is required")
+	}
+	return r.save(path, content, false, &expectedHash)
+}
 
-func (r *Repository) save(path, content string, create bool) (string, error) {
+func (r *Repository) SaveAs(path, content string) (string, error) {
+	result, err := r.save(path, content, true, nil)
+	return result.ContentHash, err
+}
+
+func (r *Repository) save(path, content string, create bool, expectedHash *string) (SaveResult, error) {
 	logPrefix := fmt.Sprintf("[Save 保存绘图][filePath=%s]", path)
 	if err := validateExtension(path); err != nil {
-		return "", err
+		return SaveResult{}, err
 	}
 	if err := Validate(content); err != nil {
-		return "", err
+		return SaveResult{}, err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	root, rel, err := r.locate(path)
 	if err != nil {
-		return "", err
+		return SaveResult{}, err
 	}
 	mode := fs.FileMode(0600)
 	info, err := root.Lstat(rel)
 	if err != nil && !(create && errors.Is(err, fs.ErrNotExist)) {
-		return "", err
+		return SaveResult{}, err
 	}
 	if info != nil {
 		if !info.Mode().IsRegular() {
-			return "", errors.New("refusing to overwrite a non-regular file")
+			return SaveResult{}, errors.New("refusing to overwrite a non-regular file")
 		}
 		mode = info.Mode().Perm()
 	}
-	if err := storage.WriteAtomic(root, rel, []byte(content), mode); err != nil {
+	changed := errors.New("file changed externally")
+	diskHash := ""
+	check := func() error {
+		if expectedHash == nil {
+			return nil
+		}
+		info, err := root.Lstat(rel)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("refusing to overwrite a non-regular file")
+		}
+		data, err := root.ReadFile(rel)
+		if err != nil {
+			return err
+		}
+		diskHash = Hash(string(data))
+		if diskHash != *expectedHash {
+			return changed
+		}
+		return nil
+	}
+	// Check once before preparing the write, then again after the temporary file
+	// is synced. An explicit overwrite must also name the version it replaces.
+	err = check()
+	if err == nil {
+		err = storage.WriteAtomicChecked(root, rel, []byte(content), mode, check)
+	}
+	if errors.Is(err, changed) {
+		r.logger.Info(logPrefix, "conflict", true)
+		return SaveResult{ContentHash: diskHash, Conflict: true}, nil
+	}
+	if err != nil {
 		r.logger.Error(logPrefix, "error", err)
-		return "", err
+		return SaveResult{}, err
 	}
 	r.logger.Debug(logPrefix, "bytes", len(content))
-	return Hash(content), nil
+	return SaveResult{ContentHash: Hash(content)}, nil
 }
 
 func (r *Repository) CreateFile(directory, name string) (string, error) {

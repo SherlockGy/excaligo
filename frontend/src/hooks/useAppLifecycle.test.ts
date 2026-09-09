@@ -39,6 +39,34 @@ it('autosaves dirty content after 30 seconds and cleans up the timer', async () 
   expect(save).toHaveBeenCalledOnce()
 })
 
+it('keeps the active read-only tab during a transient external removal', async () => {
+  const tab = { name: 'a.excalidraw', path: '/work/a.excalidraw', modified: false,
+    cachedContent: '{}', contentHash: 'old', sceneVersion: 0, cachedScene: { elements: [], appState: {} } }
+  useStore.setState({ currentDirectory: '/work', activeFile: tab, openTabs: [tab], fileContent: '{}',
+    files: [], loadFileTree: vi.fn().mockResolvedValue(undefined) })
+  const { unmount } = renderHook(useAppLifecycle)
+  const callback = mockListen.mock.calls.find(([name]) => name === 'file-system-change')![1]
+  await act(async () => { await callback({ payload: tab.path }) })
+  expect(useStore.getState().openTabs).toEqual([tab])
+  expect(useStore.getState().fileContent).toBe('{}')
+  unmount()
+})
+
+it('does not autosave a conflict after its notice is dismissed', async () => {
+  vi.useFakeTimers()
+  const save = vi.fn()
+  const tab = { name: 'a.excalidraw', path: '/work/a.excalidraw', modified: true,
+    cachedContent: '{}', contentHash: 'old', sceneVersion: 0, cachedScene: { elements: [], appState: {} },
+    externalConflict: { contentHash: 'external' } }
+  useStore.setState({ activeFile: tab, openTabs: [tab], isDirty: true, readOnly: false,
+    saveCurrentFile: save, fileConflictPath: null })
+  const { unmount } = renderHook(useAppLifecycle)
+  await act(async () => { await vi.advanceTimersByTimeAsync(90000) })
+  expect(save).not.toHaveBeenCalled()
+  expect(useStore.getState().fileConflictPath).toBeNull()
+  unmount()
+})
+
 it('does not force quit after a failed save and releases the close guard', async () => {
   useStore.setState({ isDirty: true, saveCurrentFile: vi.fn().mockRejectedValue(new Error('disk full')) })
   mockAsk.mockResolvedValue(true)
@@ -111,7 +139,7 @@ it('saves background dirty tabs before closing the application', async () => {
   const { unmount } = renderHook(useAppLifecycle)
   const close = mockListen.mock.calls.find(([name]) => name === 'check-unsaved-before-close')![1]
   await act(async () => { await close({ payload: null }) })
-  expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: tab.path, content })
+  expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: tab.path, content, expectedHash: tab.contentHash })
   expect(useStore.getState().openTabs[0].modified).toBe(false)
   expect(mockInvoke).toHaveBeenCalledWith('force_close_app')
   unmount()

@@ -35,6 +35,11 @@ type Content struct {
 	ContentHash string `json:"content_hash"`
 }
 
+type SaveResult struct {
+	ContentHash string `json:"content_hash"`
+	Conflict    bool   `json:"conflict"`
+}
+
 func Hash(content string) string {
 	sum := blake3.Sum256([]byte(content))
 	return hex.EncodeToString(sum[:])

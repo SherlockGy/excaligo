@@ -19,3 +19,8 @@ export interface Node {
     "modified": boolean;
     "children": Node[] | null;
 }
+
+export interface SaveResult {
+    "content_hash": string;
+    "conflict": boolean;
+}

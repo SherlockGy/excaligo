@@ -69,8 +69,8 @@ func (s *Service) ReadFileWithHash(filePath string) (drawing.Content, error) {
 	return s.files.Read(filePath)
 }
 func (s *Service) HashFileContent(filePath string) (string, error) { return s.files.HashFile(filePath) }
-func (s *Service) SaveFile(filePath, content string) (string, error) {
-	return s.files.Save(filePath, content)
+func (s *Service) SaveFile(filePath, content, expectedHash string) (drawing.SaveResult, error) {
+	return s.files.Save(filePath, content, expectedHash)
 }
 func (s *Service) CreateNewFile(directory, fileName string) (string, error) {
 	return s.files.CreateFile(directory, fileName)

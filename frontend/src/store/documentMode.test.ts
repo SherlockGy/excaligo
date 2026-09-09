@@ -34,7 +34,7 @@ it('saves edits before entering read-only and blocks repeated toggles and naviga
   let resolve!: (hash: string) => void
   mockInvoke.mockReturnValue(new Promise<string>(done => { resolve = done }))
   const switching = useStore.getState().toggleReadOnly()
-  await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: tab.path, content }))
+  await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: tab.path, content, expectedHash: tab.contentHash }))
   expect(useStore.getState()).toMatchObject({ readOnly: false, savingBeforeReadOnly: true, isDirty: true })
   await useStore.getState().toggleReadOnly()
   await useStore.getState().loadFile({ ...tab, path: '/work/b.excalidraw' })
@@ -66,7 +66,7 @@ it('drains a pending autosave and writes any final changes before making the doc
   useStore.getState().setFileContent(newest)
   resolve('older')
   await Promise.all([autosave, switching])
-  expect(mockInvoke).toHaveBeenLastCalledWith('save_file', { filePath: tab.path, content: newest })
+  expect(mockInvoke).toHaveBeenLastCalledWith('save_file', { filePath: tab.path, content: newest, expectedHash: 'older' })
   expect(useStore.getState()).toMatchObject({ readOnly: true, isDirty: false, fileContent: newest })
 })
 
@@ -81,7 +81,7 @@ it('saves changes that arrive during the transition write instead of losing them
   resolve('first')
   await switching
   expect(mockInvoke).toHaveBeenCalledTimes(2)
-  expect(mockInvoke).toHaveBeenLastCalledWith('save_file', { filePath: tab.path, content: newest })
+  expect(mockInvoke).toHaveBeenLastCalledWith('save_file', { filePath: tab.path, content: newest, expectedHash: 'first' })
   expect(useStore.getState()).toMatchObject({ readOnly: true, isDirty: false })
 })
 

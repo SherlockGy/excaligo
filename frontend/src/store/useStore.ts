@@ -5,6 +5,7 @@ import { convertPreferencesFromBackend, convertPreferencesToBackend } from '../l
 import { ask } from '../lib/backend'
 import { translate, type MessageKey, type Parameters } from '../lib/i18n'
 import { canDropFile, findTreeNode, moveTreeFile, normalizeFilePath, renameDestination } from '../lib/fileMove'
+import { FileConflictError } from '../lib/fileSync'
 
 type UnsavedChangesDecision = 'save' | 'discard' | 'cancel'
 type FileLoadSource = 'cache' | 'disk' | null
@@ -53,6 +54,7 @@ function toOpenTab(
     contentHash,
     cachedScene: parseSceneFromContent(content),
     sceneVersion,
+    externalConflict: undefined,
   }
 }
 
@@ -71,6 +73,18 @@ async function readOpenTabFromDisk(file: ExcalidrawFile, sceneVersion = 0): Prom
   )
 
   return toOpenTab({ ...file, modified: false }, content, contentHash, sceneVersion)
+}
+
+async function saveForTransition(save: () => Promise<void>): Promise<boolean> {
+  try {
+    await save()
+    return true
+  } catch (error) {
+    // The persistent conflict notice already offers the next action. Abort
+    // navigation without a second modal or an unhandled click rejection.
+    if (error instanceof FileConflictError) return false
+    throw error
+  }
 }
 
 async function confirmUnsavedChanges(
@@ -171,8 +185,10 @@ interface AppStore {
   readOnly: boolean
   savingBeforeReadOnly: boolean
   fileMutationPath: string | null
+  pendingFileLoad: number | null
   presentationMode: boolean
   openTabs: OpenTab[]
+  fileConflictPath: string | null
 
   // Actions
   setCurrentDirectory: (dir: string | null) => void
@@ -198,6 +214,7 @@ interface AppStore {
   saveCurrentFile: (content?: string) => Promise<void>
   saveTab: (filePath: string, content?: string) => Promise<void>
   toggleReadOnly: () => Promise<void>
+  resolveFileConflict: (filePath: string, choice: 'reload' | 'overwrite', expectedHash: string | null) => Promise<void>
   createNewFile: (fileName?: string, directory?: string) => Promise<void>
   createNewFolder: (folderName?: string, directory?: string) => Promise<void>
   renameFile: (oldPath: string, newName: string) => Promise<void>
@@ -234,8 +251,10 @@ export const useStore = create<AppStore>((set, get) => ({
   readOnly: true,
   savingBeforeReadOnly: false,
   fileMutationPath: null,
+  pendingFileLoad: null,
   presentationMode: false,
   openTabs: [],
+  fileConflictPath: null,
 
   // Basic setters
   setCurrentDirectory: (dir) => set({ currentDirectory: dir }),
@@ -306,7 +325,7 @@ export const useStore = create<AppStore>((set, get) => ({
         if (!isCurrent()) return false
         if (decision === 'cancel') return false
         if (decision === 'save') {
-          await state.saveCurrentFile()
+          if (!await saveForTransition(() => state.saveCurrentFile())) return false
           if (get().isDirty) return false
         }
       }
@@ -315,7 +334,7 @@ export const useStore = create<AppStore>((set, get) => ({
         const decision = await confirmUnsavedChanges(tab.name, t('switching directories'))
         if (!isCurrent() || decision === 'cancel') return false
         if (decision === 'save') {
-          await get().saveTab(tab.path)
+          if (!await saveForTransition(() => get().saveTab(tab.path))) return false
           if (get().openTabs.find(item => item.path === tab.path)?.modified) return false
         }
       }
@@ -419,124 +438,132 @@ export const useStore = create<AppStore>((set, get) => ({
     let snapshot = state
     const isCurrent = () => generation === fileLoadGeneration && activeDocumentUnchanged(snapshot)
 
-    // Check if current file has unsaved changes
-    if (state.isDirty && state.activeFile) {
-      const decision = await confirmUnsavedChanges(state.activeFile.name, t('switching files'))
-      if (!isCurrent()) return
-
-      if (decision === 'save') {
-        await state.saveCurrentFile()
-        if (get().isDirty) return
-      } else if (decision === 'cancel') {
-        return
-      } else {
-        try {
-          const existingTab = get().openTabs.find((tab) => tab.path === state.activeFile?.path)
-          const cleanTab = await readOpenTabFromDisk(
-            state.activeFile,
-            (existingTab?.sceneVersion || 0) + 1
-          )
-
-          if (!isCurrent()) return
-
-          set((currentState) => ({
-            activeFile: toExcalidrawFile(cleanTab),
-            fileContent: cleanTab.cachedContent,
-            activeFileLoadSource: 'disk',
-            isDirty: false,
-            openTabs: currentState.openTabs.map((tab) =>
-              tab.path === cleanTab.path ? cleanTab : tab
-            ),
-          }))
-          state.markFileAsModified(cleanTab.path, false)
-          state.markTreeNodeAsModified(cleanTab.path, false)
-          snapshot = get()
-        } catch (error) {
-          console.error('Failed to discard unsaved changes:', error)
-          alert(t("Failed to discard unsaved changes: {error}", { error: String(error) }))
-          return
-        }
-      }
-    }
-
+    // Suspend refresh of the old active canvas until this request settles.
+    // Keep the document snapshot guard intact for actual edits during the read.
+    set({ pendingFileLoad: generation })
     try {
-      if (!isCurrent()) return
-      const latestState = get()
-      const existingTab = latestState.openTabs.find(t => t.path === file.path)
-
-      // Unsaved memory is authoritative even if the external file disappeared
-      // or changed. Hash-based reloads are only safe for clean tabs.
-      if (existingTab?.modified) {
-        set({ activeFile: toExcalidrawFile(existingTab), fileContent: existingTab.cachedContent,
-          activeFileLoadSource: 'cache', isDirty: true, readOnly: false })
-        return
-      }
-
-      if (existingTab) {
-        const diskHash = await invoke<string>('hash_file_content', {
-          filePath: file.path,
-        })
+      // Check if current file has unsaved changes
+      if (state.isDirty && state.activeFile) {
+        const decision = await confirmUnsavedChanges(state.activeFile.name, t('switching files'))
         if (!isCurrent()) return
 
-        if (diskHash === existingTab.contentHash) {
-          set({
-            activeFile: toExcalidrawFile(existingTab),
-            fileContent: existingTab.cachedContent,
-            activeFileLoadSource: 'cache',
-            isDirty: existingTab.modified,
-            readOnly: !existingTab.modified,
-          })
+        if (decision === 'save') {
+          if (!await saveForTransition(() => state.saveCurrentFile())) return
+          if (get().isDirty) return
+        } else if (decision === 'cancel') {
+          return
+        } else {
+          try {
+            const existingTab = get().openTabs.find((tab) => tab.path === state.activeFile?.path)
+            const cleanTab = await readOpenTabFromDisk(
+              state.activeFile,
+              (existingTab?.sceneVersion || 0) + 1
+            )
+
+            if (!isCurrent()) return
+
+            set((currentState) => ({
+              activeFile: toExcalidrawFile(cleanTab),
+              fileContent: cleanTab.cachedContent,
+              activeFileLoadSource: 'disk',
+              isDirty: false,
+              openTabs: currentState.openTabs.map((tab) =>
+                tab.path === cleanTab.path ? cleanTab : tab
+              ),
+            }))
+            state.markFileAsModified(cleanTab.path, false)
+            state.markTreeNodeAsModified(cleanTab.path, false)
+            snapshot = get()
+          } catch (error) {
+            console.error('Failed to discard unsaved changes:', error)
+            alert(t("Failed to discard unsaved changes: {error}", { error: String(error) }))
+            return
+          }
+        }
+      }
+
+      try {
+        if (!isCurrent()) return
+        const latestState = get()
+        const existingTab = latestState.openTabs.find(t => t.path === file.path)
+
+        // Unsaved memory is authoritative even if the external file disappeared
+        // or changed. Hash-based reloads are only safe for clean tabs.
+        if (existingTab?.modified) {
+          set({ activeFile: toExcalidrawFile(existingTab), fileContent: existingTab.cachedContent,
+            activeFileLoadSource: 'cache', isDirty: true, readOnly: false })
           return
         }
-      }
 
-      const updatedTab = await readOpenTabFromDisk(
-        file,
-        existingTab ? existingTab.sceneVersion + 1 : 0
-      )
-      if (!isCurrent()) return
-      const updatedFile = toExcalidrawFile(updatedTab)
-      const openTabs = existingTab
-        ? get().openTabs.map((tab) => (tab.path === file.path ? updatedTab : tab))
-        : [...get().openTabs, updatedTab]
-
-      set({
-        activeFile: updatedFile,
-        readOnly: true,
-        fileContent: updatedTab.cachedContent,
-        activeFileLoadSource: 'disk',
-        isDirty: false,
-        openTabs,
-      })
-
-      state.markFileAsModified(file.path, false)
-      state.markTreeNodeAsModified(file.path, false)
-    } catch (error) {
-      if (!isCurrent()) return
-      console.error('Failed to load file:', error)
-
-      // If file doesn't exist, refresh the tree and show error
-      if (String(error).includes('No such file') || String(error).includes('not found')) {
-        alert(t('File not found: {name}\n\nThe file may have been deleted or moved. Refreshing file list...', { name: file.name }))
-
-        // Clear active file if it's the one that failed
-        if (state.activeFile?.path === file.path) {
-          set({
-            activeFile: null,
-            fileContent: null,
-            activeFileLoadSource: null,
-            isDirty: false,
+        if (existingTab) {
+          const diskHash = await invoke<string>('hash_file_content', {
+            filePath: file.path,
           })
+          if (!isCurrent()) return
+
+          if (diskHash === existingTab.contentHash) {
+            set({
+              activeFile: toExcalidrawFile(existingTab),
+              fileContent: existingTab.cachedContent,
+              activeFileLoadSource: 'cache',
+              isDirty: existingTab.modified,
+              readOnly: !existingTab.modified,
+            })
+            return
+          }
         }
 
-        // Refresh the file tree
-        if (state.currentDirectory) {
-          await state.loadFileTree(state.currentDirectory)
+        const updatedTab = await readOpenTabFromDisk(
+          file,
+          existingTab ? existingTab.sceneVersion + 1 : 0
+        )
+        if (!isCurrent()) return
+        const updatedFile = toExcalidrawFile(updatedTab)
+        const openTabs = existingTab
+          ? get().openTabs.map((tab) => (tab.path === file.path ? updatedTab : tab))
+          : [...get().openTabs, updatedTab]
+
+        set({
+          activeFile: updatedFile,
+          readOnly: true,
+          fileContent: updatedTab.cachedContent,
+          activeFileLoadSource: 'disk',
+          isDirty: false,
+          openTabs,
+        })
+
+        state.markFileAsModified(file.path, false)
+        state.markTreeNodeAsModified(file.path, false)
+      } catch (error) {
+        if (!isCurrent()) return
+        console.error('Failed to load file:', error)
+
+        // If file doesn't exist, refresh the tree and show error
+        if (String(error).includes('No such file') || String(error).includes('not found')) {
+          alert(t('File not found: {name}\n\nThe file may have been deleted or moved. Refreshing file list...', { name: file.name }))
+
+          // Clear active file if it's the one that failed
+          if (state.activeFile?.path === file.path) {
+            set({
+              activeFile: null,
+              fileContent: null,
+              activeFileLoadSource: null,
+              isDirty: false,
+            })
+          }
+
+          // Refresh the file tree
+          if (state.currentDirectory) {
+            await state.loadFileTree(state.currentDirectory)
+          }
+        } else {
+          // Other errors
+          alert(t("Failed to load file: {error}", { error: String(error) }))
         }
-      } else {
-        // Other errors
-        alert(t("Failed to load file: {error}", { error: String(error) }))
       }
+    } finally {
+      // An older request must not resume syncing while a newer one is pending.
+      if (get().pendingFileLoad === generation) set({ pendingFileLoad: null })
     }
   },
 
@@ -578,6 +605,11 @@ export const useStore = create<AppStore>((set, get) => ({
       return
     }
 
+    if (activeFile.externalConflict) {
+      set({ fileConflictPath: filePath })
+      throw new FileConflictError(activeFile.externalConflict.contentHash || '')
+    }
+
     // Only save if file is dirty
     if (!isDirty && !content) {
       return
@@ -603,6 +635,7 @@ export const useStore = create<AppStore>((set, get) => ({
       const operation = invoke<string>('save_file', {
         filePath: activeFile.path,
         content: contentToSave,
+        expectedHash: activeFile.contentHash,
       })
       savingFiles.set(activeFile.path, operation)
       const contentHash = await operation
@@ -627,6 +660,12 @@ export const useStore = create<AppStore>((set, get) => ({
         ),
       }))
     } catch (error) {
+      if (error instanceof FileConflictError) {
+        set(current => ({ fileConflictPath: filePath, openTabs: current.openTabs.map(tab =>
+          tab.path === filePath ? { ...tab, externalConflict: { contentHash: error.contentHash } } : tab) }))
+        console.info(logPrefix, 'external version changed; save paused')
+        throw error
+      }
       console.error(logPrefix, error)
       alert(t("Failed to save file: {error}", { error: String(error) }))
       throw error
@@ -635,10 +674,69 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
+  resolveFileConflict: async (filePath, choice, expectedHash) => {
+    const logPrefix = `[resolveFileConflict 处理保存冲突][filePath=${filePath}]`
+    const state = get()
+    const tab = state.openTabs.find(item => item.path === filePath)
+    if (!tab?.externalConflict || state.fileMutationPath || state.savingBeforeReadOnly) return
+    // The button acts on the version that was displayed, not a newer version
+    // discovered after the user clicked. No unconditional overwrite exists.
+    if (choice === 'overwrite' && (!expectedHash || tab.externalConflict.contentHash !== expectedHash)) return
+    beginFileMutation(filePath)
+    try {
+      await waitForFileWrites(filePath)
+      const snapshot = get().openTabs.find(item => item.path === filePath)
+      if (!snapshot || snapshot.editorKey !== tab.editorKey || snapshot.sceneVersion !== tab.sceneVersion) return
+      let clean: OpenTab
+      if (choice === 'reload') {
+        clean = await readOpenTabFromDisk(snapshot, snapshot.sceneVersion + 1)
+        clean.editorKey = snapshot.editorKey
+        if (get().openTabs.find(item => item.path === filePath)?.cachedContent !== snapshot.cachedContent) {
+          console.info(logPrefix, 'local input finished during reload; confirmation still required')
+          return
+        }
+      } else {
+        const contentHash = await invoke<string>('save_file', {
+          filePath, content: snapshot.cachedContent, expectedHash,
+        })
+        const latest = get().openTabs.find(item => item.path === filePath)
+        if (!latest) return
+        // A final core callback may arrive after the write started. Preserve it
+        // as unsaved data, just as an ordinary save preserves concurrent edits.
+        clean = { ...latest, contentHash, modified: latest.cachedContent !== snapshot.cachedContent, externalConflict: undefined }
+      }
+      set(current => ({
+        openTabs: current.openTabs.map(item => item.path === filePath ? clean : item),
+        fileConflictPath: current.fileConflictPath === filePath ? null : current.fileConflictPath,
+        ...(current.activeFile?.path === filePath ? {
+          activeFile: toExcalidrawFile(clean), fileContent: clean.cachedContent, isDirty: clean.modified,
+          ...(choice === 'reload' ? { readOnly: true, activeFileLoadSource: 'disk' as const } : {}),
+        } : {}),
+      }))
+      get().markFileAsModified(filePath, clean.modified)
+      get().markTreeNodeAsModified(filePath, clean.modified)
+    } catch (error) {
+      if (error instanceof FileConflictError) {
+        set(current => ({ fileConflictPath: filePath, openTabs: current.openTabs.map(item =>
+          item.path === filePath ? { ...item, externalConflict: { contentHash: error.contentHash } } : item) }))
+        console.info(logPrefix, 'external version changed again; confirmation required')
+      } else {
+        console.error(logPrefix, error)
+        alert(t(choice === 'reload' ? 'Failed to load file: {error}' : 'Failed to save file: {error}', { error: String(error) }))
+      }
+    } finally {
+      set({ fileMutationPath: null })
+    }
+  },
+
   // Application-level policy. Excalidraw stays an unmodified dependency.
   toggleReadOnly: async () => {
     const state = get()
     if (!state.activeFile || state.savingBeforeReadOnly || state.fileMutationPath) return
+    if (state.openTabs.find(tab => tab.path === state.activeFile?.path)?.externalConflict) {
+      set({ fileConflictPath: state.activeFile.path })
+      return
+    }
     if (state.readOnly) {
       set({ readOnly: false })
       return
@@ -678,7 +776,7 @@ export const useStore = create<AppStore>((set, get) => ({
       if (!isCurrent()) return
 
       if (decision === 'save') {
-        await state.saveCurrentFile()
+        if (!await saveForTransition(() => state.saveCurrentFile())) return
         if (get().isDirty) return
       } else if (decision === 'cancel') {
         return
@@ -1201,8 +1299,8 @@ export const useStore = create<AppStore>((set, get) => ({
       if (!isCurrent()) return
 
       if (decision === 'save') {
-        if (state.activeFile?.path === filePath) await state.saveCurrentFile()
-        else await state.saveTab(filePath)
+        if (!await saveForTransition(() => state.activeFile?.path === filePath
+          ? state.saveCurrentFile() : state.saveTab(filePath))) return
         if (get().openTabs.find(item => item.path === filePath)?.modified ||
           (get().activeFile?.path === filePath && get().isDirty)) return
       } else if (decision === 'cancel') {

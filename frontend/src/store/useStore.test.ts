@@ -26,7 +26,7 @@ describe('saving and unsaved data', () => {
     activate(makeTab('empty.excalidraw', empty), true)
     mockInvoke.mockResolvedValue('new-hash')
     await useStore.getState().saveCurrentFile()
-    expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: '/workspace/empty.excalidraw', content: empty })
+    expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: '/workspace/empty.excalidraw', content: empty, expectedHash: 'old-hash' })
     expect(useStore.getState().isDirty).toBe(false)
     expect(useStore.getState().openTabs[0].contentHash).toBe('new-hash')
   })

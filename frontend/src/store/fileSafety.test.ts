@@ -110,7 +110,7 @@ it('keeps a background dirty tab if closing is cancelled and saves it without ch
   mockAsk.mockResolvedValue(true)
   mockInvoke.mockResolvedValue('saved-background')
   await useStore.getState().closeTab(b.path)
-  expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: b.path, content })
+  expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: b.path, content, expectedHash: b.contentHash })
   expect(useStore.getState().openTabs).toEqual([a])
   expect(useStore.getState().activeFile).toBe(a)
   expect(useStore.getState().isDirty).toBe(false)

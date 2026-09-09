@@ -96,8 +96,8 @@ export function RenameFolder(oldPath: string, newName: string): $CancellableProm
     return $Call.ByID(1303466540, oldPath, newName);
 }
 
-export function SaveFile(filePath: string, content: string): $CancellablePromise<string> {
-    return $Call.ByID(3041238501, filePath, content);
+export function SaveFile(filePath: string, content: string, expectedHash: string): $CancellablePromise<drawing$0.SaveResult> {
+    return $Call.ByID(3041238501, filePath, content, expectedHash);
 }
 
 export function SaveFileAs(content: string): $CancellablePromise<string | null> {

@@ -39,7 +39,7 @@ it('moves an unsaved tab without rewriting the drawing and saves later at the ne
   expect(state.fileContent).toBe(content)
   expect(mockInvoke).not.toHaveBeenCalledWith('save_file', expect.anything())
   await state.saveCurrentFile()
-  expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: newPath, content })
+  expect(mockInvoke).toHaveBeenCalledWith('save_file', { filePath: newPath, content, expectedHash: 'disk-hash' })
   expect(useStore.getState().isDirty).toBe(false)
 })
 

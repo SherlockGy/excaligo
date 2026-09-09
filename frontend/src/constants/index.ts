@@ -6,6 +6,7 @@ export const TIMING = {
   LOADING_HIDE_DELAY: 200,
   USER_CHANGE_ENABLE_DELAY: 300,
   AUTO_SAVE_INTERVAL: 30000, // 30 seconds
+  EXTERNAL_FILE_CHECK_INTERVAL: 2000,
 } as const
 
 // File system constants

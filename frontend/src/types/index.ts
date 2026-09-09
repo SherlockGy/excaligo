@@ -17,6 +17,9 @@ export interface OpenTab extends ExcalidrawFile {
   contentHash: string
   cachedScene: CachedExcalidrawScene
   sceneVersion: number
+  // null hash means the external file is currently unavailable. Local edits
+  // remain in cachedContent until the user explicitly resolves the conflict.
+  externalConflict?: { contentHash: string | null }
 }
 
 export interface FileTreeNode {

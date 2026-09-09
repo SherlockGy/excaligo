@@ -2,6 +2,7 @@ import { Events, Window } from '@wailsio/runtime'
 import * as Service from '../../bindings/github.com/SherlockGy/excaligo/internal/desktop/service'
 import type { DialogOptions } from '../../bindings/github.com/SherlockGy/excaligo/internal/desktop/models'
 import type { Preferences } from '../../bindings/github.com/SherlockGy/excaligo/internal/preferences/models'
+import { savedContentHash } from './fileSync'
 
 // The original frontend command vocabulary is isolated here. Every operation
 // uses generated, compile-checked Wails v3 bindings; no legacy runtime is loaded.
@@ -12,7 +13,8 @@ const commands = {
   read_file: (p: { filePath: string }) => Service.ReadFile(p.filePath),
   read_file_with_hash: (p: { filePath: string }) => Service.ReadFileWithHash(p.filePath),
   hash_file_content: (p: { filePath: string }) => Service.HashFileContent(p.filePath),
-  save_file: (p: { filePath: string; content: string }) => Service.SaveFile(p.filePath, p.content),
+  save_file: (p: { filePath: string; content: string; expectedHash: string }) =>
+    Service.SaveFile(p.filePath, p.content, p.expectedHash).then(savedContentHash),
   save_file_as: (p: { content: string }) => Service.SaveFileAs(p.content),
   create_new_file: (p: { directory: string; fileName: string }) => Service.CreateNewFile(p.directory, p.fileName),
   create_new_folder: (p: { directory: string; folderName: string }) => Service.CreateNewFolder(p.directory, p.folderName),

@@ -38,7 +38,7 @@ func TestFileLifecycleAndLosslessRoundTrip(t *testing.T) {
 		t.Fatal("invalid new drawing")
 	}
 	content := `{"type":"excalidraw","version":2,"elements":[{"id":"图1","x":1}],"files":{"img":{"dataURL":"data:image/png;base64,AAAA"}},"custom":"preserve"}`
-	hash, err := r.Save(file, content)
+	saved, err := r.Save(file, content, original.ContentHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,17 +46,17 @@ func TestFileLifecycleAndLosslessRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Content != content || loaded.ContentHash != hash {
+	if loaded.Content != content || loaded.ContentHash != saved.ContentHash || saved.Conflict {
 		t.Fatal("round trip changed content")
 	}
-	if _, err := r.Save(file, `{broken`); err == nil {
+	if _, err := r.Save(file, `{broken`, loaded.ContentHash); err == nil {
 		t.Fatal("accepted invalid content")
 	}
 	loaded, _ = r.Read(file)
 	if loaded.Content != content {
 		t.Fatal("invalid write destroyed original")
 	}
-	if _, err := r.Save(file, DefaultContent); err != nil {
+	if _, err := r.Save(file, DefaultContent, loaded.ContentHash); err != nil {
 		t.Fatal(err)
 	}
 	renamed, err := r.RenameFile(file, "renamed.json")
@@ -167,7 +167,7 @@ func TestPathTraversalAndSymlinkEscape(t *testing.T) {
 	if _, err := r.Read(secret); err == nil {
 		t.Fatal("read outside root")
 	}
-	if _, err := r.Save(secret, DefaultContent); err == nil {
+	if _, err := r.Save(secret, DefaultContent, Hash(DefaultContent)); err == nil {
 		t.Fatal("wrote outside root")
 	}
 	if err := os.Symlink(outside, filepath.Join(dir, "escape")); err != nil {
@@ -196,7 +196,7 @@ func TestPathTraversalAndSymlinkEscape(t *testing.T) {
 func TestSaveAsAndExhaustion(t *testing.T) {
 	r, dir := workspace(t)
 	path := filepath.Join(dir, "copy.excalidraw")
-	if _, err := r.Save(path, DefaultContent); err == nil {
+	if _, err := r.Save(path, DefaultContent, Hash(DefaultContent)); err == nil {
 		t.Fatal("regular save created missing file")
 	}
 	if _, err := r.SaveAs(path, DefaultContent); err != nil {

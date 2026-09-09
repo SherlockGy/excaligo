@@ -13,6 +13,12 @@ import (
 // WriteAtomic leaves the previous file intact unless the complete replacement
 // has been written, synced and closed. The temporary file is in the same folder.
 func WriteAtomic(root *os.Root, name string, content []byte, mode fs.FileMode) (err error) {
+	return WriteAtomicChecked(root, name, content, mode, nil)
+}
+
+// WriteAtomicChecked revalidates the destination immediately before replacement.
+// This is optimistic concurrency control, not a lock shared with other programs.
+func WriteAtomicChecked(root *os.Root, name string, content []byte, mode fs.FileMode, check func() error) (err error) {
 	var id [12]byte
 	if _, err = rand.Read(id[:]); err != nil {
 		return err
@@ -31,6 +37,11 @@ func WriteAtomic(root *os.Root, name string, content []byte, mode fs.FileMode) (
 	}
 	if err = f.Close(); err != nil {
 		return fmt.Errorf("close file: %w", err)
+	}
+	if check != nil {
+		if err = check(); err != nil {
+			return err
+		}
 	}
 	if err = root.Rename(tmp, name); err != nil {
 		return fmt.Errorf("replace file: %w", err)

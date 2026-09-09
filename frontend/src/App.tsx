@@ -11,6 +11,7 @@ import { useEffect } from 'react'
 import { PanelLeft } from 'lucide-react'
 import { ShellSettings } from './components/ShellSettings'
 import { DocumentModeButton } from './components/DocumentModeButton'
+import { ExternalFileNotice } from './components/ExternalFileNotice'
 import { useTranslation } from './hooks/useTranslation'
 import './index.css'
 
@@ -41,6 +42,7 @@ function App() {
         <ExcalidrawEditor />
       </div>
       {presentationMode && <LaserPointer />}
+      <ExternalFileNotice />
     </div>
   )
 }

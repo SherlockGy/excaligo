@@ -46,8 +46,11 @@ export function useAppLifecycle() {
               path.startsWith(`${directory.replace(/[\\/]+$/, '')}\\`)) && !paths.has(path)
           const missing = state.activeFile && missingInWorkspace(state.activeFile.path)
           useStore.setState({
-            openTabs: state.openTabs.filter(tab => !missingInWorkspace(tab.path) || tab.modified),
-            ...(missing && !state.isDirty ? { activeFile: null, fileContent: null, activeFileLoadSource: null } : {}),
+            // Read-only reload keeps the last valid scene through a transient
+            // remove/recreate save and reports an unavailable external file.
+            openTabs: state.openTabs.filter(tab => !missingInWorkspace(tab.path) || tab.modified ||
+              (state.readOnly && tab.path === state.activeFile?.path)),
+            ...(missing && !state.isDirty && !state.readOnly ? { activeFile: null, fileContent: null, activeFileLoadSource: null } : {}),
           })
         } while (refreshAgain && !disposed)
       } finally { refreshing = false }
@@ -97,7 +100,8 @@ export function useAppLifecycle() {
     void openPending().catch(error => console.error(logPrefix, error))
     const timer = setInterval(() => {
       const state = useStore.getState()
-      if (state.isDirty && !state.readOnly && !state.savingBeforeReadOnly && !state.fileMutationPath && !closing) {
+      if (state.isDirty && !state.readOnly && !state.savingBeforeReadOnly && !state.fileMutationPath && !closing &&
+        !state.openTabs.find(tab => tab.path === state.activeFile?.path)?.externalConflict) {
         void state.saveCurrentFile().catch(error => console.error(logPrefix, error))
       }
     }, TIMING.AUTO_SAVE_INTERVAL)

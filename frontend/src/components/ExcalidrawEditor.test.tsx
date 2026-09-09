@@ -5,6 +5,7 @@ import { useStore } from '../store/useStore'
 import { ExcalidrawEditor } from './ExcalidrawEditor'
 import { mockInvoke } from '../test/setup'
 import { DocumentModeButton } from './DocumentModeButton'
+import { executeMenuCommand } from '../hooks/useMenuHandler'
 import { fireEvent, waitFor } from '@testing-library/react'
 
 const editor = vi.hoisted(() => ({ mounted: vi.fn(), unmounted: vi.fn(), props: vi.fn(),
@@ -128,6 +129,65 @@ it('keeps the editor instance and undo history when the tab path changes', () =>
 function enableWheelZoom() {
   useStore.setState({ preferences: { ...initial.preferences, readOnlyWheelZoom: true } })
 }
+
+it('remounts an external scene with the live viewport and ignores callbacks from the old scene', () => {
+  prepareDocument()
+  render(<ExcalidrawEditor />)
+  change([], { scrollX: 321, scrollY: -123, zoom: { value: 2.5 } })
+  const oldChange = editor.props.mock.lastCall![0].onChange
+  const mounted = editor.mounted.mock.calls.length
+  const external = JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'external' }],
+    appState: { scrollX: 999, scrollY: 999, zoom: { value: 8 }, viewBackgroundColor: '#ffffff' }, files: {} })
+  act(() => {
+    const tab = useStore.getState().openTabs[0]
+    useStore.setState({ fileContent: external, openTabs: [{ ...tab, cachedContent: external,
+      cachedScene: JSON.parse(external), contentHash: 'external-hash', sceneVersion: tab.sceneVersion + 1 }] })
+  })
+  expect(editor.mounted).toHaveBeenCalledTimes(mounted + 1)
+  expect(editor.props.mock.lastCall![0].initialData.appState).toMatchObject({ scrollX: 321, scrollY: -123, zoom: { value: 2.5 } })
+  expect(editor.api.scrollToContent).not.toHaveBeenCalled()
+  act(() => {
+    useStore.setState({ readOnly: false })
+    oldChange([{ id: 'stale-scene' }], { viewBackgroundColor: '#ffffff' }, {})
+  })
+  expect(useStore.getState()).toMatchObject({ fileContent: external, isDirty: false })
+  expect(mockInvoke).not.toHaveBeenCalled()
+})
+
+it('finishes focused input on conflict and includes final callbacks in Save As without remounting', async () => {
+  prepareDocument()
+  useStore.setState({ readOnly: false })
+  render(<ExcalidrawEditor />)
+  const mounted = editor.mounted.mock.calls.length
+  const input = document.createElement('textarea')
+  screen.getByTestId('editor-stub').append(input)
+  input.addEventListener('blur', () => {
+    editor.props.mock.lastCall![0].onChange([{ id: 'text', type: 'text', text: 'Final input' }],
+      { viewBackgroundColor: '#ffffff' }, {})
+    input.remove()
+  })
+  input.focus()
+  expect(document.activeElement).toBe(input)
+  act(() => {
+    const tab = useStore.getState().openTabs[0]
+    useStore.setState({ isDirty: true,
+      openTabs: [{ ...tab, modified: true, externalConflict: { contentHash: 'external' } }] })
+  })
+  expect(editor.props.mock.lastCall![0].viewModeEnabled).toBe(true)
+  expect(input).not.toBeInTheDocument()
+  // Also retain a delayed final callback after view mode has already rendered.
+  change([{ id: 'text', type: 'text', text: 'Final input and composition' }])
+  const saved = useStore.getState().fileContent!
+  expect(JSON.parse(saved).elements[0].text).toBe('Final input and composition')
+  expect(useStore.getState().openTabs[0].cachedContent).toBe(saved)
+  expect(useStore.getState().isDirty).toBe(true)
+  expect(editor.mounted).toHaveBeenCalledTimes(mounted)
+  mockInvoke.mockResolvedValueOnce('/work/copy.excalidraw').mockResolvedValueOnce({ content: saved, content_hash: 'copy' })
+  await act(async () => { await executeMenuCommand('save_as') })
+  expect(mockInvoke).toHaveBeenCalledWith('save_file_as', { content: saved })
+  expect(useStore.getState()).toMatchObject({ fileContent: saved, isDirty: false })
+  expect(useStore.getState().openTabs).toHaveLength(1)
+})
 
 it('captures plain wheel input once, accumulates rapid steps and never dirties or saves the drawing', async () => {
   const content = prepareDocument()
