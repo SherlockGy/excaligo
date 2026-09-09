@@ -1,137 +1,167 @@
+<p align="center">
+  <img src="build/icons/icon.png" width="160" height="160" alt="Excaligo：Go 地鼠抱着带有绘图标志的紫色文件夹" />
+</p>
+
 # Excaligo
 
-使用 Go + Wails v3 重写 Excalirs 的本地 Excalidraw 桌面编辑器。保留原项目的 React、Excalidraw、界面样式与文件格式，原 Rust/Tauri 后端由 Go 服务替代。
+基于 [Excalidraw](https://github.com/excalidraw/excalidraw) 的本地优先桌面绘图应用，使用 Go + Wails v3 构建目录管理与桌面外壳。
 
-迁移基线为 `SherlockGy/excalirs` 的 `f9d2bda874172a77127807a3f87c7e9b54b4d581`。具体功能对应关系与验证范围见 [迁移说明](docs/migration.md)。
+Excalidraw 提供绘图编辑器，Excaligo 负责本地文件夹、标签页、只读浏览、保存和原生窗口集成。绘图文件使用标准 `.excalidraw` 格式，可直接打开和保存；编辑器保持官方依赖，不修改其内核。Excaligo 是独立项目，并非 Excalidraw 官方桌面客户端。
 
-## 运行
-
-需要 Go 1.25 或更高版本、Node.js 22.12 或更高版本，以及相应系统的 Wails 原生编译依赖。macOS 需要 Xcode Command Line Tools。
-
-```sh
-# 在仓库根目录执行，安装依赖、生成绑定、构建前端与 Go 程序
-node scripts/build.mjs
-
-# 启动构建结果（自动选择 macOS / Windows 可执行文件）
-node scripts/run.mjs
-
-# macOS 应用包（本地 ad-hoc 签名）
-node scripts/build.mjs --package
-open bin/Excaligo.app
-
-# macOS DMG；目标文件已存在时不会覆盖
-node scripts/build.mjs --dmg
-```
-
-Windows 使用同一个构建入口，生成 `bin/excaligo.exe`（GUI 子系统，不弹出控制台窗口），运行需要 Microsoft Edge WebView2 Runtime。`.app` 和 DMG 打包仅用于 macOS；本项目尚未提供 Windows 安装器。
-
-开发模式：
-
-```sh
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.17
-# 确保 Go 的 bin 目录已加入 PATH
-wails3 task dev
-```
-
-开发模式使用 Wails 原生应用和本地 Vite 热更新服务，监听 `127.0.0.1:9245`。仅运行 Vite 不会启动 Go 服务。干净检出时保留的 `frontend/dist/.gitkeep` 用于生成绑定，正式构建会先生成真实前端资源。
-
-Wails Go 模块与 `@wailsio/runtime` 均固定为 **3.0.0-beta.17**，这是迁移时（2026-09-08）查询到的最新 v3 版本；该版本仍为 beta。采用该版本的 Service、Window / Menu / Dialog / Event Manager API，TypeScript 绑定由同版本 CLI 生成，不包含 Tauri 运行时。
-
-macOS 打包脚本使用 Go **1.26.8**，保持原项目 macOS **12.0** 的最低系统目标；Go 会按需下载该工具链。直接用 Go 1.27 编译的程序需要 macOS 13 或更高版本。依据：[Go 1.26 发布说明](https://go.dev/doc/go1.26#darwin)。
+[下载与发布](https://github.com/SherlockGy/excaligo/releases) · [从源码构建](#从源码构建) · [MIT 许可证](LICENSE)
 
 ## 功能
 
-- 文件夹树与递归文件列表、文件夹优先排序、隐藏文件过滤。
-- 文件及文件夹新建、重命名、删除；重名时最多尝试 100 个数字后缀。
-- 侧边栏拖动单个文件进入子目录或移回工作目录根层级；同名目标拒绝覆盖。
-- Excalidraw 完整绘图编辑器，多标签页、画布缓存和 BLAKE3 外部变更检测。
-- 默认只读查看；应用工具栏切换编辑，编辑转只读前自动保存，查看时拖动和缩放不改写绘图文件。
-- 手动保存、30 秒自动保存、另存为、PNG / SVG / Excalidraw / 素材库导出。
-- 关闭、切换文件和目录前的未保存确认；保存失败会保留编辑内容。
-- 递归目录监听，创建新子目录后继续监听，切换目录会关闭旧监听。
-- 原生菜单、最近 10 个目录、浅色 / 深色 / 系统主题、侧边栏开关。
-- 应用外壳中文 / 英文切换，涵盖侧边栏、标签页、设置面板、原生菜单和应用操作提示，不切换 Excalidraw 内部语言。
-- F5 演示模式、激光笔、Escape 退出演示、无边框模式、全屏和窗口控制。
-- `.excalidraw` 文件关联及命令行文件打开。内置字体，离线加载画布。
+- **本地目录管理**：文件夹树、新建文件与子目录、重命名、删除，以及侧边栏拖动移动文件。
+- **多标签页**：缓存画布和未保存内容；侧边栏与标签页都用文件名前的黄点提示未保存状态。
+- **默认只读**：打开文件先浏览，需要修改时再切换编辑；编辑转只读前自动保存。
+- **只读交互开关**：可开启直接滚轮缩放、左键拖动画布，浏览操作不改写绘图文件。
+- **外部修改处理**：当前只读文件自动重载，保留查看位置；保存时检测外部版本变化，发生冲突后由用户选择。
+- **绘图与导出**：使用 Excalidraw 编辑器，支持手动保存、30 秒自动保存、另存为，以及 PNG、SVG、Excalidraw 和素材库导出。
+- **主题与语言**：亮色、暗色、跟随系统；应用外壳支持中文和英文，主题也同步到编辑器。
+- **桌面集成**：原生菜单、最近目录、全屏、无边框窗口、演示模式及文件打开入口；内置字体支持离线加载画布。
 
-偏好设置保存在系统配置目录的 `excaligo/preferences.json`，可用 `EXCALIGO_CONFIG_DIR` 指定配置父目录以隔离开发与测试。文件采用与原项目相同的 `preferences` 包装对象及 snake_case 字段；不会自动改写旧应用的配置文件。绘图文件可以直接打开，无需转换。
+## 下载与运行
 
-删除操作与原项目一致：经过界面确认后直接删除，文件夹包含的内容也会删除，不会移入回收站。
+在 [GitHub Releases](https://github.com/SherlockGy/excaligo/releases) 查看已发布版本。发布流程生成以下文件：
 
-## 侧边栏状态与文件移动
+| 平台 | 发布文件 | 使用方式 |
+| --- | --- | --- |
+| macOS · Apple Silicon | `Excaligo-v<版本>-macos-arm64.zip` | 解压后打开 `Excaligo.app` |
+| macOS · Intel | `Excaligo-v<版本>-macos-amd64.zip` | 解压后打开 `Excaligo.app` |
+| Windows · x64 | `Excaligo-v<版本>-windows-amd64.exe` | 直接运行，无需安装 Excaligo |
+| 校验文件 | `SHA256SUMS.txt` | 核对下载文件的 SHA-256 |
 
-未保存黄点位于文件图标与文件名之间；保存后黄点及间距一并消失，不预留空位。长文件名只截断文字，黄点保持可见，悬停可查看完整文件名及未保存提示。选中文件用背景色表示，不再额外显示右箭头；文件夹的展开箭头保留。
+macOS 构建目标为 12.0 及以上。不使用 Apple Developer ID 证书或公证，仅有本地 ad-hoc 签名；首次打开可能需要在系统“隐私与安全性”中允许。Windows 版本不做 Authenticode 签名，可能出现未知发布者提示，运行需要 Microsoft Edge WebView2 Runtime。
 
-按住文件行拖到目标文件夹即可移动；移回根层级时，拖到顶部工作目录名称或文件列表空白区域。悬停折叠目录 600 毫秒会展开，按 Escape 可取消。只接受侧边栏中的单个文件，不拖动目录，也不把外部文件当作移动来源。
+没有可用发布包时，可以按下文从源码构建。普通分支推送只触发 CI 并生成 Actions 构建产物，不会自动发布 Release。
 
-移动只改变文件路径，不重新序列化 Excalidraw 数据。只读文件的内容和修改时间保持不变；编辑中的未保存内容随标签页保留，之后手动保存或正常自动保存会使用新路径。移动期间暂缓保存、关闭及其他会改变路径的操作，并协调目录监听，防止旧路径被误判为删除。同名文件或目录不会被覆盖；跨文件系统的移动会安全失败，保留源文件，不自动退化为复制后删除。
+## 使用方式
 
-## 主题与语言
+### 管理绘图文件
 
-点击应用内容区右上角的设置按钮，选择亮色、暗色、跟随系统或应用语言。原生菜单也提供 **View → Theme / Language**（中文为 **视图 → 主题 / 语言**）。隐藏侧边栏或窗口边框后，设置按钮仍可用；演示模式下按 Escape 返回。
+打开一个本地工作目录，在左侧文件树中创建、打开和整理绘图。拖动单个文件到目标文件夹即可移动；拖到顶部工作目录名称或文件列表空白处可移回根目录。移动不会重新序列化绘图内容，目标重名时拒绝覆盖。
 
-切换立即生效并保存，重启后恢复。旧配置没有 `language` 字段时默认使用英文，保持原有行为。主题同时应用于外壳和 Excalidraw；语言只应用于外壳，不重建画布、不改写文件名或绘图内容。系统标题栏、系统文件选择器及其内置文案仍由操作系统管理；应用设置的菜单、按钮和消息正文使用所选语言。
+当前不支持拖动整个目录或拖入外部文件来执行移动；跨文件系统移动会失败并保留源文件，不自动执行复制后删除。
 
-Go 与 TypeScript 共享 `internal/localization/locales/en.json` 和 `zh.json`，测试检查翻译键及占位符的一致性。设置写入串行执行，失败时报告错误并撤回失败选择。
+> 删除经过界面确认后直接作用于磁盘，不移入回收站。删除文件夹会同时删除其内容，请提前备份。
 
-## 只读查看与内核版本
+### 只读与编辑
 
-新建、打开、切换到已保存的标签页及重启后，默认进入只读。工具栏的“只读”按钮进入编辑，“编辑中”按钮保存后返回只读；保存失败则保留编辑状态和未保存内容。保存期间暂缓文件切换、关闭标签及重命名等操作，避免保存目标发生变化。
+新建、打开以及切换到已保存的标签页时，默认进入只读。点击工具栏的“只读”进入编辑，点击“编辑中”保存后返回只读。保存失败时，保留编辑状态和未保存内容。
 
-只读浏览不触发手动保存或自动保存；另存为绘图文件需要先进入编辑模式。拖动、缩放、选择和主题均为查看状态，不复制到绘图文件。实际编辑保存时保留文件原有的视口与其他元数据。只读是应用内的绘图保存策略，不改变操作系统文件权限，也不取消用户明确确认的重命名、删除或图片导出。
+只读模式下，画布拖动、缩放和主题切换不会触发绘图保存。在右上角设置中开启“只读时滚轮缩放”，即可使用滚轮直接缩放、左键拖动画布；关闭时保留编辑器默认的浏览交互。
 
-右上角设置面板显示实际安装的 **Excalidraw 版本**。2026-09-08 核实官方最新稳定版仍为 [0.18.1](https://github.com/excalidraw/excalidraw/releases/tag/v0.18.1)，本项目已使用该版本，现固定精确依赖和锁文件；没有切换到预览版。版本文案在构建时读取安装包，未来升级无需手动修改显示文本。
+只读是应用内的保存策略，不改变操作系统文件权限，也不禁止用户明确确认的重命名、删除或图片导出。另存为绘图文件需要先进入编辑模式。
 
-只读实现完全位于应用组件、状态管理和保存适配层，使用官方 `viewModeEnabled`，不修改或 fork Excalidraw 核心。升级步骤、依赖约束和验收记录见 [只读与内核维护说明](docs/editor-integration.md)。
+### 外部修改与保存冲突
 
-## 包结构
+当前活动标签页处于只读且没有未保存内容时，外部修改会自动重载，并用非阻塞提示告知。提示不必先关闭：外部继续修改时，应用会继续检查和重载，同时保留当前画布位置与缩放。文件暂时不可读或内容尚未写完时，保留最后一次有效画面并重试。
 
-```text
-cmd/excaligo/          程序入口
-internal/desktop/     Wails 装配、原生窗口/菜单/对话框、IPC 服务
-internal/drawing/     文档校验、BLAKE3、目录树与受限文件操作
-internal/preferences/ 偏好设置及持久化
-internal/localization/ 外壳共享翻译目录
-internal/watcher/     递归监听和资源生命周期
-internal/storage/     原子文件替换
-frontend/             React 前端、生成的绑定及嵌入资源
-build/                Wails 开发配置、平台元数据和图标
-scripts/              构建与打包入口
-examples/             原项目绘图样例
+编辑状态不会自动重载外部内容。保存时如果检测到文件版本已变化，会暂停保存并保留本地编辑，提供以下选择：
+
+- **加载外部版本**：重新读取磁盘内容，放弃本地未保存修改。
+- **用本地内容覆盖**：再次核对外部版本后保存本地内容；外部又有变化时，需要重新确认。
+- **关闭提示**：保留冲突状态，不会恢复自动保存或静默覆盖。
+
+这里采用文件版本校验，不提供自动合并、版本历史或跨进程文件锁；多程序同时修改重要文件时，仍建议保留备份。
+
+### 主题、语言与版本
+
+右上角设置面板提供主题、应用语言、只读交互开关和当前 Excalidraw 版本。主题与语言也可通过原生菜单“视图 → 主题 / 语言”设置，修改会保存并在重启后恢复。
+
+主题同时影响应用外壳和 Excalidraw。语言只切换应用外壳，不切换 Excalidraw 编辑器内部文案。系统标题栏及系统文件选择器自身的语言仍由操作系统管理。
+
+偏好设置位于系统配置目录下的 `excaligo/preferences.json`。开发和测试可通过 `EXCALIGO_CONFIG_DIR` 指定独立的配置父目录。
+
+## 从源码构建
+
+需要 Go 1.25 或更高版本、Node.js 22.12 或更高版本，以及相应平台的 Wails 原生构建依赖。macOS 需要 Xcode Command Line Tools。
+
+克隆仓库后，在仓库根目录执行：
+
+```sh
+git clone https://github.com/SherlockGy/excaligo.git
+cd excaligo
+
+# 安装依赖、生成平台图标与绑定，构建前端和可执行文件
+node scripts/build.mjs
+
+# 启动构建结果
+node scripts/run.mjs
 ```
 
-业务包不依赖 Wails，便于单元测试。`internal/desktop` 只负责平台适配；不使用无实际外部消费者的公共 `pkg` 目录。运行时文件能力由用户选择或上次保存的工作目录授予，通过 Go `os.Root` 限制路径访问并防止符号链接越界。目录树跳过符号链接；新建使用排他创建，保存采用同目录临时文件写入、同步、关闭、重命名。目录监听和打开的文件系统根在服务关闭时释放。
+macOS 应用包：
 
-## 验证
+```sh
+node scripts/build.mjs --package
+open bin/Excaligo.app
+
+# 可选：生成 DMG；同名目标已存在时不会覆盖
+node scripts/build.mjs --dmg
+```
+
+Windows 使用相同的 `node scripts/build.mjs` 入口，输出 `bin/excaligo.exe`，带嵌入图标、应用清单和版本信息，不弹出控制台窗口。
+
+macOS 打包脚本固定使用 Go 1.26.8，以保持 macOS 12.0 的构建目标；Go 会按需下载该工具链。当前仓库固定 Excalidraw 0.18.1 与 Wails v3.0.0-beta.17，Wails Go 模块、前端运行时和绑定生成器使用匹配版本。实际 Excalidraw 版本在构建时从安装包读取，无需手动维护界面版本文案。
+
+## 开发
+
+```sh
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.17
+# 将 Go 的 bin 目录加入 PATH
+wails3 task dev
+```
+
+开发模式启动 Wails 原生应用及 Vite 热更新服务，前端监听 `127.0.0.1:9245`。仅启动 Vite 不会启动 Go 服务。
+
+### 目录结构
+
+```text
+cmd/excaligo/           程序入口
+internal/desktop/      原生窗口、菜单、对话框和前后端服务适配
+internal/drawing/      文档校验、文件版本、目录树和文件操作
+internal/preferences/ 偏好设置持久化
+internal/localization/ 中英文共享翻译
+internal/watcher/      目录监听
+internal/storage/      原子文件写入和移动
+frontend/              React 界面、Excalidraw 适配和生成的绑定
+build/                 平台元数据、图标和资源测试
+scripts/               构建、打包和发布脚本
+examples/              示例绘图
+```
+
+只读、主题和文件同步逻辑位于应用外壳，通过 Excalidraw 的公开 API 接入，不修改 `node_modules` 或维护私有内核分支。维护细节见 [编辑器集成说明](docs/editor-integration.md)；图标来源、格式与再生成方式见 [应用图标说明](build/icons/README.md)。
+
+### 测试
+
+先完成依赖安装和构建，再执行：
 
 ```sh
 go test -race '-coverprofile=coverage.out' ./...
 go vet ./...
 npm --prefix frontend run typecheck
 npm --prefix frontend run test:run
-npm --prefix frontend audit
-node --test scripts/release-config.test.mjs
+node --test scripts/release-config.test.mjs scripts/windows-resources.test.mjs
 ```
 
-Go 测试包括原始样例无损往返、文件操作、JSON 校验、BLAKE3 向量、路径和符号链接越界、并发新建、写入失败、偏好设置兼容与目录监听生命周期。前端测试覆盖保存失败拦截、空画布、并发保存、自动保存、标签缓存、异步读取顺序、另存为和快捷键。
+测试覆盖文件读写、路径边界、保存冲突、只读重载、标签切换、主题语言、拖动移动，以及原生图标和发布资源。CI 包含 Apple Silicon macOS、Intel macOS 和 Windows x64 的构建与测试。Windows 原生交互及 macOS 12 实机仍需单独验收；Linux 不在当前发布矩阵中。
 
-CI 配置包含 Apple Silicon macOS、Intel macOS 和 Windows x64 的原生构建、Go 竞态测试、前端测试和发布包检查。测试覆盖同名并发移动拒绝覆盖、路径越界、未保存缓存迁移、移动与保存竞争、旧目录响应失效及侧边栏拖动交互。Windows 实机交互、Linux 原生构建、macOS 12 实机尚未验收；构建成功不代表这些实机验证已完成。
+### 发布
 
-## GitHub Release
+推送符合 `v1.2.3` 或 `v1.2.3-beta.1` 形式的版本标签会触发 [Release 工作流](.github/workflows/release.yml)。三平台 CI 全部通过后才发布，预发布标签会标记为 prerelease，不自动覆盖已有 Release。
 
-`.github/workflows/release.yml` 在推送 `v` 开头的版本标签时运行，复用 CI 的三平台构建和测试，全部成功后才创建 Release。版本必须符合 `v1.2.3` 或 `v1.2.3-beta.1` 形式；预发布标签会标记为 prerelease。普通分支推送和手动运行 CI 只生成 Actions 构建产物，不发布版本，也不会自动创建标签。
+本地构建完成后，执行 `node scripts/package-release.mjs` 可在 `bin/release/` 生成同格式资产及校验文件。已有同名产物不会被覆盖。
 
-发布资产包括：
+## 上游与致谢
 
-- `Excaligo-v<版本>-macos-arm64.zip`：Apple Silicon Mac，解压得到 `Excaligo.app`。
-- `Excaligo-v<版本>-macos-amd64.zip`：Intel Mac，同样为普通 `.app` 压缩包。
-- `Excaligo-v<版本>-windows-amd64.exe`：Windows x64 免安装可执行文件，无安装器和控制台窗口。
-- `SHA256SUMS.txt`：以上三个文件的 SHA-256 校验值，发布前再次核对。
+- [Excalidraw](https://github.com/excalidraw/excalidraw)：本项目的绘图内核来源，通过官方 `@excalidraw/excalidraw` 包集成。
+- [Wails v3](https://github.com/wailsapp/wails)：Go 与原生桌面窗口的集成框架。
+- [React](https://github.com/facebook/react)：应用界面组件。
+- [Go Gopher](https://go.dev/blog/gopher)：图标中的角色由 Renee French 原创，本项目改编为抱着绘图文件夹的地鼠，沿用 CC BY 4.0 署名要求。
 
-macOS 包不使用 Apple Developer ID 证书、不公证，仅保留本地 ad-hoc 签名；首次打开可能需要通过系统“隐私与安全性”允许。ZIP 通过 `ditto` 打包，保留应用结构和可执行权限。Windows 文件不做 Authenticode 签名，可能出现未知发布者提示；运行仍需要 [Microsoft Edge WebView2 Runtime](https://v3.wails.io/getting-started/installation/#platform-specific-dependencies)，无需安装 Excaligo 本身。
+## 开源协议
 
-本地生成同格式的发布包：先执行对应平台构建，再运行 `node scripts/package-release.mjs`。产物在 `bin/release/`，已存在的同名产物不会被覆盖。CI 和本地打包共享版本及命名规则；macOS 包内版本会随标签更新。发布使用 GitHub 自动提供的 token，只有最后的发布任务拥有 `contents: write`，无需配置签名密钥或个人访问令牌。已有 Release 不会自动覆盖或替换。
+Excaligo 项目代码采用 [MIT License](LICENSE)，版权归属 `Copyright (c) 2026 SherlockGy`。
 
-## 来源
-
-前端组件、样式、图标与样例来自提供的 Excalirs 项目；保留其文件 `source: ExcaliApp` 标识。绘图引擎来自 [Excalidraw](https://github.com/excalidraw/excalidraw)，桌面框架来自 [Wails v3](https://v3.wails.io/)。原项目的 README 声明 MIT，但本地基线未附 `LICENSE` 文件，因此本次未代替上游添加新的许可证声明。
+第三方依赖及素材保留各自的版权和许可，不因本项目采用 MIT 而改变。[Excalidraw 使用 MIT 许可证](https://github.com/excalidraw/excalidraw/blob/master/LICENSE)；Go Gopher 相关图标素材遵循 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，作者及改编说明见 [图标来源](build/icons/README.md)。本项目不代表上游项目或图标作者为其背书。
