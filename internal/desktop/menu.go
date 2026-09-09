@@ -110,7 +110,9 @@ func (s *Service) refreshMenu() {
 	add(help, "Keyboard Shortcuts", "keyboard_shortcuts", "")
 	help.AddSeparator()
 	about := func(*application.Context) {
-		s.Message("Excaligo · Go + Wails v3\nExcalidraw", DialogOptions{Title: tr("About Excaligo")})
+		s.Message("Excaligo · Go + Wails v3\nExcalidraw\n\n"+
+			tr("App icon: adapted from the Go Gopher by Renee French (CC BY 4.0).")+
+			"\nhttps://go.dev/blog/gopher\nhttps://creativecommons.org/licenses/by/4.0/", DialogOptions{Title: tr("About Excaligo")})
 	}
 	help.Add(tr("About Excaligo")).OnClick(about)
 	for role, label := range map[application.Role]string{

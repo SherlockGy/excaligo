@@ -115,6 +115,7 @@
   "Switch Tabs: Cmd/Ctrl+Tab / Cmd/Ctrl+Shift+Tab": "切换标签页：Cmd/Ctrl+Tab / Cmd/Ctrl+Shift+Tab",
   "Native system controls follow the OS appearance and language.": "系统原生控件的外观和语言由操作系统管理。",
   "Read-only": "只读",
+  "App icon: adapted from the Go Gopher by Renee French (CC BY 4.0).": "应用图标：基于 Renee French 的 Go Gopher 改编（CC BY 4.0）。",
   "Save conflict": "保存冲突",
   "Review save conflict": "处理保存冲突",
   "Saving paused because the file changed externally. Your unsaved edits are still here.": "文件已被外部修改，保存已暂停。本地未保存的更改仍然保留。",

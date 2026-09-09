@@ -5,6 +5,7 @@
 !/frontend/dist/.gitkeep
 /.tools/
 /.task/
+/cmd/excaligo/wails_windows_*.syso
 /coverage.out
 /frontend/coverage/
 *.log
